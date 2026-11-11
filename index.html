@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <title>Money Time</title>
+  <link rel="icon" type="image/png" href="assets/favicon.png">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <section id="home" class="screen"></section>
+
+  <section id="match" class="screen" hidden>
+    <header id="board"></header>
+    <main>
+      <div id="left">
+        <div id="courtWrap">
+          <svg id="court" viewBox="0 0 500 400" preserveAspectRatio="xMidYMid meet" aria-label="Demi-terrain">
+            <defs>
+              <pattern id="wood" width="500" height="26" patternUnits="userSpaceOnUse">
+                <rect width="500" height="26" fill="#C99462"/>
+                <rect y="0" width="500" height="13" fill="#C38E5C"/>
+                <line x1="0" y1="13" x2="500" y2="13" stroke="#B27F4E" stroke-width="0.6"/>
+                <line x1="0" y1="26" x2="500" y2="26" stroke="#B27F4E" stroke-width="0.6"/>
+              </pattern>
+            </defs>
+            <rect width="500" height="400" fill="url(#wood)"/>
+            <g fill="none" stroke="#F4F1E8" stroke-width="2.5" opacity="0.92">
+              <rect x="1.5" y="1.5" width="497" height="397"/>
+              <rect id="paint" x="170" y="1.5" width="160" height="188.5" fill="rgba(20,43,73,0.28)"/>
+              <path d="M190 190 A60 60 0 0 0 310 190"/>
+              <path d="M190 190 A60 60 0 0 1 310 190" stroke-dasharray="7 7"/>
+              <path d="M30 1.5 L30 140 A237.5 237.5 0 0 0 470 140 L470 1.5"/>
+              <path d="M210 52 A40 40 0 0 0 290 52"/>
+              <line x1="220" y1="40" x2="280" y2="40" stroke-width="3.5"/>
+              <circle id="hoop" cx="250" cy="52" r="8.5" stroke="#D64045" stroke-width="3"/>
+            </g>
+            <image href="assets/logo.png" x="205" y="288" width="90" height="106" opacity="0.2" preserveAspectRatio="xMidYMid meet"/>
+            <g id="tokens"></g>
+            <circle id="ball" r="6.5" cx="0" cy="0"/>
+          </svg>
+          <button id="fastBtn" type="button" hidden>Accélérer ▸▸</button>
+        </div>
+        <ol id="feed" aria-live="polite"></ol>
+      </div>
+      <aside id="panel"></aside>
+    </main>
+    <footer id="bench"></footer>
+  </section>
+
+  <section id="result" class="screen" hidden></section>
+  <div id="modal" hidden></div>
+  <div id="pop" hidden></div>
+  <div id="toast" hidden></div>
+
+  <script src="js/data.js"></script>
+  <script src="js/teams.js"></script>
+  <script src="js/engine.js"></script>
+  <script src="js/ai.js"></script>
+  <script src="js/scenarios.js"></script>
+  <script src="js/events.js"></script>
+  <script src="js/ui.js"></script>
+</body>
+</html>
