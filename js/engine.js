@@ -58,7 +58,7 @@
   function roles(off, play, targetId) {
     const T = off.find((p) => p.id === targetId) || maxBy(off, E.scorer);
     let H, S = null;
-    if (play === 'shooter') {
+    if (play === 'shooter' || play === 'post') {
       S = T;
       H = maxBy(off.filter((p) => p !== S), (p) => eff(p, 'pas') + 0.5 * eff(p, 'drb'));
     } else H = T;
@@ -99,6 +99,7 @@
     const T = s.teams[t];
     T.timeouts--;
     s.ball = 'dead'; s.subsOk = true; s.sit = 'Reprise après temps mort'; s.ato = t;
+    if (s.poss === t) s.bc = false; // temps mort de l'attaque : remise en jeu en zone avant
     for (const tm of s.teams)
       for (const p of tm.players) p.fatigue = clamp(p.fatigue - (tm.onCourt.includes(p.id) ? 7 : 4), 0, 100);
     return { kind: 'timeout', team: t, text: `Temps mort ${T.name}. Les joueurs soufflent un peu.`, anim: [], snap: E.snap(s) };
@@ -144,6 +145,10 @@
     return clamp(p, 0.03, 0.95);
   }
   E.pMake = pMake;
+  /** Systèmes où le joueur recherché est servi par un partenaire (il n'est pas le porteur). */
+  const served = (play) => play === 'shooter' || play === 'post';
+  /** Le pressing ne s'applique que si la possession démarre par une relance depuis l'arrière. */
+  E.pressApplies = (s) => !!s.bc;
   /** Ligne de statistiques vierge ; sec : temps de jeu en secondes. */
   E.newStats = () => ({ sec: 0, pts: 0, fgm: 0, fga: 0, tpm: 0, tpa: 0, ftm: 0, fta: 0, oreb: 0, dreb: 0, ast: 0, stl: 0, blk: 0, to: 0 });
   /** 1 : en forme, -1 : en difficulté, 0 : dans ses standards. */
@@ -156,8 +161,10 @@
     iso: [['H', 'rim', 0.3, 0.4], ['H', 'mid', 0.35, 0.45], ['H', 'three', 0.2, 0.42], ['K', 'three', 0.15, 0.5, 1]],
     drive: [['H', 'rim', 0.55, 0.44], ['H', 'mid', 0.13, 0.45], ['K', 'three', 0.2, 0.56, 1], ['R', 'rim', 0.12, 0.55, 1]],
     shooter: [['S', 'three', 0.55, 0.55, 1], ['S', 'mid', 0.13, 0.5, 1], ['R', 'rim', 0.12, 0.5, 1], ['H', 'mid', 0.1, 0.36], ['H', 'three', 0.1, 0.36]],
+    // dernier champ : 1 = passe décisive du porteur, 2 = du joueur recherché (ressortie après l'aide)
+    post: [['S', 'rim', 0.44, 0.47, 1], ['S', 'mid', 0.18, 0.46, 1], ['K', 'three', 0.18, 0.52, 2], ['R', 'rim', 0.1, 0.5, 2], ['H', 'three', 0.1, 0.46, 2]],
   };
-  const TO_BASE = { pnr: 0.11, iso: 0.08, drive: 0.12, shooter: 0.09 };
+  const TO_BASE = { pnr: 0.11, iso: 0.08, drive: 0.12, shooter: 0.09, post: 0.11, motion: 0.115 };
 
   /* ---------- une séquence : de la décision au prochain point de décision ---------- */
   E.playSegment = function (s) {
@@ -170,7 +177,10 @@
     const R = roles(off, oo.play, oo.target);
     const mu = matchups(off, def);
     const dOf = (p) => mu[p.id] || def[0];
-    const H = R.H, focus = oo.play === 'shooter' ? R.S : R.H;
+    const H = R.H, focus = served(oo.play) ? R.S : R.H;
+    const zn = dd.scheme === 'zone';
+    const pressOn = dd.scheme === 'press' && !!s.bc;
+    s.bc = false;
     // effets différés des événements aléatoires (voir events.js)
     const M = s.mods || (s.mods = {});
     if (M.want && M.want.team === oi) {
@@ -188,8 +198,8 @@
     const hack = M.hack && M.hack.team === di ? M.hack.id : null;
     if (hack) delete M.hack;
     const margin = s.score[oi] - s.score[di];
-    const avail = Math.min(s.clock, s.shot);
-    const last = s.clock <= s.shot + 0.01;
+    let avail = Math.min(s.clock, s.shot);
+    let last = s.clock <= s.shot + 0.01;
     const ato = s.ato === oi;
     s.ato = null; s.ball = 'live'; s.subsOk = false;
     let used = 0;
@@ -203,7 +213,8 @@
       if (text) seg.texts.push(text);
       return e;
     };
-    const turnBall = (ball, subsOk, sit) => { s.poss = di; s.shot = 24; s.ball = ball; s.subsOk = subsOk; s.sit = sit; };
+    // bc : la possession suivante part de l'arrière (panier, lancers, rebond défensif, ballon rendu)
+    const turnBall = (ball, subsOk, sit, bc) => { s.poss = di; s.shot = 24; s.ball = ball; s.subsOk = subsOk; s.sit = sit; s.bc = !!bc; };
 
     const dblT = dd.scheme === 'double' ? off.find((p) => p.id === dd.dblTarget) || maxBy(off, E.scorer) : null;
     const activeDbl = !!dblT && dblT === focus;
@@ -226,7 +237,7 @@
         victim.st.fta++;
         if (lastMade) { s.score[oi]++; victim.st.ftm++; victim.st.pts++; }
         const final = i === n - 1;
-        if (final && lastMade) turnBall('dead', true, 'Remise en jeu après lancers francs');
+        if (final && lastMade) turnBall('dead', true, 'Remise en jeu après lancers francs', true);
         emit('ft', `${victim.short}, lancer ${i + 1} sur ${n} : ${lastMade ? pick(s, ['réussi.', 'dedans.', 'ça rentre.']) : pick(s, ['manqué.', 'trop court.', 'ça ressort.'])}`,
           [{ a: 'ft', id: victim.id, made: lastMade }], { pts: lastMade ? 1 : 0 });
       }
@@ -255,7 +266,7 @@
       const Da = mean(df.map((p) => eff(p, 'dreb')));
       let pOff = isFT
         ? clamp(0.12 + (Oa - Da) * 0.02, 0.04, 0.25)
-        : clamp(0.27 + (Oa - Da) * 0.035 + (type === 'three' ? 0.02 : 0) + (dd.endgame === 'rebound' ? -0.08 : 0), 0.08, 0.45);
+        : clamp(0.27 + (Oa - Da) * 0.035 + (type === 'three' ? 0.02 : 0) + (dd.endgame === 'rebound' ? -0.08 : 0) + (zn ? 0.05 : 0), 0.08, 0.45);
       if (depth >= 2) pOff = 0;
       spend(0.8 + rnd(s) * 1.4);
       if (s.clock <= 0) { emit('buzz', 'Le ballon traîne au rebond… et le buzzer retentit.'); return; }
@@ -273,7 +284,7 @@
       } else {
         const rb = wpick(s, df, (p) => Math.pow(eff(p, 'dreb'), 2));
         rb.st.dreb++;
-        turnBall('live', false, 'Ballon en jeu après rebond défensif');
+        turnBall('live', false, 'Ballon en jeu après rebond défensif', true);
         emit('dreb', pick(s, [`${rb.short} capte le rebond défensif.`, `Rebond pour ${rb.short}.`, `${rb.short} sécurise le rebond.`]),
           [{ a: 'reb', id: rb.id }], { team: di });
       }
@@ -305,7 +316,7 @@
       const pre = (tact ? tact + ' ' : '') + act;
       if (made) {
         s.score[oi] += pts;
-        if (!fouled) turnBall('dead', false, 'Remise en jeu après panier');
+        if (!fouled) turnBall('dead', false, 'Remise en jeu après panier', true);
         const dunk = type === 'rim' && o > 0.6 && eff(sh, 'dunk') >= 6;
         emit('made', `${pre} : ${dunk ? 'dunk !' : pick(s, ['ça rentre !', 'panier !', 'dedans !'])} +${pts}${fouled ? ' et la faute !' : ''}`, anim, { pts });
         if (fouled) foul(d, sh, 1);
@@ -329,15 +340,17 @@
         const T = s.teams[t];
         for (const p of T.players) {
           if (T.onCourt.includes(p.id)) p.st.sec += used;
-          if (T.onCourt.includes(p.id)) p.fatigue += used * 0.12 * (1 + (5 - p.end) * 0.12) * (t === oi && oo.tempo === 'quick' ? 1.15 : 1);
+          if (T.onCourt.includes(p.id)) p.fatigue += used * 0.12 * (1 + (5 - p.end) * 0.12) * (t === oi && oo.tempo === 'quick' ? 1.15 : 1) * (t === di && zn ? 0.88 : 1);
           else p.fatigue -= used * 0.1;
         }
       }
       H.fatigue += oo.play === 'drive' ? 1.5 : oo.play === 'iso' ? 0.8 : 0.6;
+      if (oo.play === 'post') { focus.fatigue += 0.8; dOf(focus).fatigue += 0.5; }
+      if (oo.play === 'motion') for (const p of off) p.fatigue += 0.3;
       if (activeDbl) { dOf(focus).fatigue += 0.8; dblBy.fatigue += 0.8; }
       for (const T of s.teams) for (const p of T.players) p.fatigue = clamp(p.fatigue, 0, 100);
 
-      let read = `Lecture — attaque : ${L.play[oo.play][0].toLowerCase()} pour ${focus.short}, ${L.tempo[oo.tempo][0].toLowerCase()} · défense : ${L.scheme[dd.scheme][0].toLowerCase()}${dblT ? ' sur ' + dblT.short : ''}, ${L.endgame[dd.endgame][0].toLowerCase()}`;
+      let read = `Lecture — attaque : ${L.play[oo.play][0].toLowerCase()} pour ${focus.short}, ${L.tempo[oo.tempo][0].toLowerCase()} · défense : ${L.scheme[dd.scheme][0].toLowerCase()}${dblT ? ' sur ' + dblT.short : ''}${dd.scheme === 'press' && !pressOn ? ' (sans objet, attaque déjà installée)' : ''}, ${L.endgame[dd.endgame][0].toLowerCase()}`;
       if (seg.read && !seg.read.heave) read += ` · occasion : tir ${openLabel(seg.read.o)} de ${seg.read.who} (≈ ${Math.round(seg.read.pm * 100)} %)`;
       emit('read', read + '.', []);
       seg.texts.pop();
@@ -368,11 +381,13 @@
       iso: `Isolation pour ${H.short}, ses partenaires s’écartent.`,
       drive: `${H.short} attaque le cercle balle en main.`,
       shooter: `Système pour ${focus.short} : écrans loin du ballon, ${H.short} à la baguette.`,
+      post: `${H.short} cherche ${focus.short} au poste bas, dos au panier.`,
+      motion: `Jeu en mouvement : le ballon circule, ${focus.short} en première option.`,
     }[oo.play];
     const rolesIds = { H: H.id, S: R.S && R.S.id, R: R.R.id, K: R.K.id, o: R.o.map((p) => p.id) };
     const muIds = {};
     Object.keys(mu).forEach((k) => (muIds[k] = mu[k].id));
-    emit('setup', setupTxt, [{ a: 'setup', play: oo.play, roles: rolesIds, mu: muIds, scheme: dd.scheme, dbl: activeDbl ? focus.id : null, dblBy: dblBy && dblBy.id }]);
+    emit('setup', setupTxt, [{ a: 'setup', play: oo.play, roles: rolesIds, mu: muIds, scheme: dd.scheme === 'press' && !pressOn ? 'man' : dd.scheme, order: off.slice().sort((x, y) => posKey(x) - posKey(y)).map((p) => p.id), dbl: activeDbl ? focus.id : null, dblBy: dblBy && dblBy.id }]);
 
     /* -- A. faute volontaire de la défense -- */
     if (dd.endgame === 'foul') {
@@ -385,6 +400,42 @@
         foul(fouler, victim, 0, true);
         return finish();
       }
+    }
+
+    /* -- pressing tout terrain : la remontée de balle est disputée -- */
+    let pressTxt = '', pressBeat = false;
+    if (pressOn) {
+      const k = dd.endgame === 'nofoul' ? 0.6 : 1; // sans faute : pressing moins agressif
+      const P = 0.3 * mean(def.map((p) => eff(p, 'spd'))) + 0.35 * mean(def.map((p) => eff(p, 'stl'))) + 0.2 * mean(def.map((p) => eff(p, 'dext'))) + 0.15 * mean(def.map((p) => p.end * (1 - p.fatigue / 250)));
+      const B = 0.4 * eff(H, 'drb') + 0.3 * eff(H, 'pas') + 0.3 * mean(off.map((p) => eff(p, 'iq')));
+      const g = (P - B) / 10;
+      for (const p of def) p.fatigue += 1.6 * k * (1 + (5 - p.end) * 0.1);
+      H.fatigue += 0.5;
+      const tp = Math.max(0, Math.min((4 + rnd(s) * 3 + 4 * Math.max(g, 0)) * k, avail - 0.5));
+      if (rnd(s) < clamp((0.065 + 0.25 * g) * k, 0.02, 0.2)) {
+        spend(tp * (0.4 + 0.5 * rnd(s)));
+        seg.to = true; H.st.to++;
+        if (rnd(s) < 0.7) {
+          const th = wpick(s, def, (p) => Math.pow(eff(p, 'stl'), 2));
+          th.st.stl++;
+          turnBall('live', false, 'Ballon en jeu après interception');
+          emit('steal', `Pressing tout terrain : ${th.short} piège ${H.short} et vole le ballon !`, [{ a: 'steal', id: th.id }], { team: di });
+        } else {
+          turnBall('dead', true, 'Remise en jeu après perte de balle', true);
+          emit('to', `Pressing tout terrain : ${H.short} ne franchit pas le milieu de terrain dans les huit secondes. Ballon rendu.`, [], { team: di });
+        }
+        return finish();
+      }
+      if (rnd(s) < 0.035 * k) {
+        spend(tp * 0.5);
+        foul(wpick(s, def, (p) => 20 + p.fatigue), H, 0, false);
+        return finish();
+      }
+      spend(tp);
+      if (s.clock <= 0) { emit('buzz', `Le pressing étouffe ${H.short} jusqu’au buzzer.`); return finish(); }
+      pressBeat = rnd(s) < clamp(0.38 - 0.5 * g, 0.12, 0.6);
+      avail = Math.min(s.clock, s.shot); last = s.clock <= s.shot + 0.01;
+      pressTxt = pressBeat ? `Le pressing est débordé : ${H.short} trouve des partenaires seuls devant lui.` : `Le pressing a coûté ${Math.round(tp)} secondes à l’attaque.`;
     }
 
     /* -- B. l'équipe qui mène laisse filer le chrono -- */
@@ -410,11 +461,20 @@
     else if (oo.tempo === 'normal') use = 8 + rnd(s) * 7;
     else use = avail - (2.5 + rnd(s) * 2.5);
     if (last && (oo.tempo === 'milk' || (oo.tempo === 'normal' && margin >= 0))) use = avail - (0.3 + rnd(s) * 1.4);
+    const offIQ = mean(off.map((p) => eff(p, 'iq'))), offPas = mean(off.map((p) => eff(p, 'pas')));
+    const defIQ = mean(def.map((p) => eff(p, 'iq')));
+    // jeu en mouvement : l'occasion demande du temps, sauf si la défense se trompe d'emblée
+    const slip = oo.play === 'motion' && rnd(s) < clamp(0.15 + (5 - defIQ) * 0.03, 0.05, 0.3);
+    if (oo.play === 'motion' && !(last && oo.tempo !== 'quick')) use = slip ? 4 + rnd(s) * 3 : use + 3;
+    if (pressBeat && !(margin > 0 && last)) use = Math.min(use, 2 + rnd(s) * 2.5);
     use = clamp(use, Math.min(0.4, avail), Math.max(avail - 0.2, Math.min(0.4, avail)));
     const quick = oo.tempo === 'quick';
 
     // perte de balle
-    let pTO = TO_BASE[oo.play] + (mean(def.map((p) => eff(p, 'stl'))) - 5) * 0.008 - (eff(H, 'drb') + eff(H, 'pas') - 12) * 0.005
+    const care = oo.play === 'post' ? (eff(H, 'pas') - 6) * 0.012 - (dd.scheme === 'paint' ? 0.015 : 0) - (zn ? 0.02 : 0) // entrée de balle
+      : oo.play === 'motion' ? (offPas + offIQ - 12) * 0.006 // coordination du cinq
+      : (eff(H, 'drb') + eff(H, 'pas') - 12) * 0.005;
+    let pTO = TO_BASE[oo.play] + (mean(def.map((p) => eff(p, 'stl'))) - 5) * 0.008 - care
       + 0.05 * H.fatigue / 100 + (rush ? 0.04 : 0) + (quick ? 0.01 : 0) + (use < 4 ? 0.02 : 0) - (dd.endgame === 'nofoul' ? 0.01 : 0);
     if (activeDbl) pTO += 0.07 - (eff(focus, 'pas') - 5) * 0.01;
     if (use < 1.5) pTO = 0.03;
@@ -432,11 +492,11 @@
           [{ a: 'steal', id: th.id }], { team: di });
       } else if (rnd(s) < 0.25) {
         loser.fouls++;
-        turnBall('dead', true, 'Remise en jeu après faute offensive');
+        turnBall('dead', true, 'Remise en jeu après faute offensive', true);
         emit('to', dbTxt + `Passage en force de ${loser.short} (${loser.fouls}e faute personnelle). Ballon rendu.`, [], { team: di });
         if (loser.fouls >= 6) foulOut(loser, oi);
       } else {
-        turnBall('dead', true, 'Remise en jeu après perte de balle');
+        turnBall('dead', true, 'Remise en jeu après perte de balle', true);
         emit('to', dbTxt + pick(s, [`Mauvaise passe de ${loser.short}, le ballon file en touche.`, `${loser.short} marche. Ballon rendu.`, `${loser.short} perd le contrôle, sortie de balle.`]), [], { team: di });
       }
       return finish();
@@ -462,6 +522,8 @@
     // occasions possibles
     const sw = dd.scheme === 'switch', pa = dd.scheme === 'paint', pe = dd.scheme === 'perimeter';
     const one = (a, d) => (0.6 * eff(a, 'drb') + 0.4 * eff(a, 'spd') - 0.7 * eff(d, 'dext') - 0.3 * eff(d, 'spd')) / 10;
+    // poste bas : un changement défensif peut laisser un petit sur l'intérieur
+    const postD = oo.play === 'post' ? (sw && dOf(H).h < dOf(focus).h ? dOf(H) : dOf(focus)) : null;
     let adv;
     if (oo.play === 'pnr') {
       const dR = dOf(R.R);
@@ -470,26 +532,51 @@
     else if (oo.play === 'drive') {
       const d = dOf(H);
       adv = (0.4 * eff(H, 'drb') + 0.4 * eff(H, 'spd') + 0.2 * eff(H, 'fin') - 0.6 * eff(d, 'dext') - 0.4 * eff(d, 'spd')) / 10;
+    } else if (oo.play === 'post') {
+      const d = postD;
+      adv = (0.5 * eff(focus, 'fin') + 0.25 * eff(focus, 'mid') + 0.25 * eff(focus, 'iq') - 0.75 * eff(d, 'dint') - 0.25 * eff(d, 'blk')) / 10
+        + clamp((focus.h - d.h) / 100, -0.15, 0.2) * 0.8 + clamp((focus.w - d.w) / 100, -0.15, 0.2) * 0.5 + 0.03;
+    } else if (oo.play === 'motion') {
+      adv = ((offPas + offIQ) / 2 * 0.7 + mean(off.map((p) => eff(p, 'spd'))) * 0.3
+        - 0.4 * mean(def.map((p) => eff(p, 'dext'))) - 0.3 * defIQ - 0.3 * mean(def.map((p) => eff(p, 'spd')))) / 10 + 0.04;
     } else {
       const d = dOf(focus);
       adv = (0.5 * eff(focus, 'spd') + 0.5 * eff(focus, 'iq') + 0.3 * (eff(H, 'pas') - 5) - 0.5 * eff(d, 'dext') - 0.3 * eff(d, 'spd') - 0.2 * eff(d, 'iq')) / 10 + 0.05;
     }
+    // zone : on défend des espaces, les duels pèsent moins ; tout dépend de la circulation du ballon
+    if (zn && oo.play !== 'motion') adv *= oo.play === 'shooter' ? 0.7 : oo.play === 'pnr' ? 0.5 : 0.3;
+    const zq = 0.4 * defIQ + 0.3 * mean(def.map((p) => eff(p, 'spd'))) + 0.15 * mean(def.map((p) => eff(p, 'dext'))) + 0.15 * mean(def.map((p) => eff(p, 'dint')));
+    const zgap = clamp(((oo.play === 'motion' ? (offPas + offIQ) / 2 : (eff(H, 'pas') + eff(H, 'iq')) / 2) - zq) / 10, -0.3, 0.3);
     const rp = Math.max.apply(null, def.map((p) => (eff(p, 'dint') + eff(p, 'blk')) / 2));
     const rimAdj = -(rp - 5) * 0.03 * (pa ? 1.4 : pe ? 0.6 : 1);
-    const pq = oo.play === 'shooter' ? 0.7 : clamp(0.5 + (eff(focus, 'pas') + eff(focus, 'iq') - 10) / 20, 0.1, 1);
+    const pq = oo.play === 'shooter' ? 0.7 : oo.play === 'motion' ? 0.9 : clamp(0.5 + (eff(focus, 'pas') + eff(focus, 'iq') - 10) / 20, 0.1, 1);
     const whoMap = { H: R.H, S: R.S, R: R.R, K: R.K };
-    const kIQ = 0.6 * eff(H, 'iq');
+    const kIQ = 0.6 * (oo.play === 'motion' ? offIQ + 1 : eff(H, 'iq'));
+    // jeu en mouvement : chaque joueur peut recevoir, sur son meilleur tir ; le joueur recherché reste prioritaire
+    const entries = oo.play !== 'motion' ? BASE[oo.play].map((b) => ({ role: b[0], who: whoMap[b[0]], type: b[1], w: b[2], o: b[3], ast: b[4] === 2 ? focus : b[4] ? H : null }))
+      : off.map((p) => {
+        const type = eff(p, 'three') >= Math.max(eff(p, 'fin'), eff(p, 'mid') * 0.9) ? 'three' : eff(p, 'fin') >= eff(p, 'mid') * 0.9 ? 'rim' : 'mid';
+        return { role: p === focus ? 'H' : 'M', who: p, type, w: p === focus ? 0.34 : 0.165, o: 0.5, ast: wpick(s, off.filter((x) => x !== p), (x) => Math.pow(eff(x, 'pas'), 2)) };
+      });
     const opts = [];
-    for (const b of BASE[oo.play]) {
-      const role = b[0], type = b[1];
-      let w = b[2], o = b[3];
-      const who = whoMap[role];
+    for (const b of entries) {
+      const role = b.role, type = b.type;
+      let w = b.w, o = b.o;
+      const who = b.who;
       if (!who) continue;
       let d = dOf(who);
+      if (postD && role === 'S') d = postD;
       if (sw && oo.play === 'pnr') { if (role === 'H') d = dOf(R.R); else if (role === 'R') d = dOf(R.H); }
       const own = who === focus;
       const fallback = oo.play === 'shooter' && role === 'H';
-      if (!fallback) o += (own ? 0.5 : 0.3) * adv;
+      if (!fallback) o += (oo.play === 'motion' ? 0.45 : own ? 0.5 : 0.3) * adv;
+      if (zn) {
+        if (type === 'rim') { w *= 0.55; o -= 0.14; } else if (type === 'mid') { w *= 1.2; o += 0.05 + 0.3 * zgap; } else { w *= 1.35; o += 0.07 + 0.5 * zgap; }
+        o += oo.play === 'motion' ? 0.1 : oo.play === 'iso' || oo.play === 'drive' ? -0.08 : oo.play === 'post' ? -0.03 : 0;
+      }
+      if (slip) o += 0.08;
+      if (oo.play === 'motion' && quick) o -= 0.04;
+      if (pressOn) { if (pressBeat) { o += 0.16; if (type === 'rim') w *= 1.6; } else o -= 0.02; }
       if (type === 'rim') o += rimAdj;
       if (pa) { if (type === 'rim') { w *= 0.55; o -= 0.15; } else if (type === 'mid') { w *= 1.3; o += 0.1; } else { w *= 1.25; o += 0.12; } }
       if (pe) { if (type === 'three') { w *= 0.5; o -= 0.18; } else if (type === 'rim') { w *= 1.3; o += 0.1; } else { w *= 1.1; o += 0.03; } }
@@ -514,7 +601,7 @@
         else if (margin === -3 && s.clock < 10) w *= 0.02;
       }
       const evp = pMake(who, type, o, d) * (type === 'three' ? 3 : 2);
-      opts.push({ role, who, type, o, d, ast: b[4] ? H : null, w: w * Math.exp(kIQ * (evp - 1)), own });
+      opts.push({ role, who, type, o, d, ast: b.ast, w: w * Math.exp(kIQ * (evp - 1)), own });
     }
     const c = wpick(s, opts, (x) => x.w);
 
@@ -524,10 +611,16 @@
     else if (misDbl && rnd(s) < 0.6) tact = `La défense surveille ${dblT.short}, le jeu passe ailleurs.`;
     else if (sw && oo.play === 'pnr') tact = c.role === 'H' ? `Changement sur l’écran : ${H.short} se retrouve face à ${c.d.short}.` : c.role === 'R' ? `Changement : ${c.who.short} hérite de ${c.d.short} dans son dos.` : 'La défense change sur l’écran.';
     else if (sw && oo.play === 'shooter') tact = c.role === 'S' ? `Les changements suivent ${focus.short} sur chaque écran.` : c.role === 'R' ? `La défense change, ${c.who.short} plonge vers le cercle.` : `${focus.short} est verrouillé, il faut improviser.`;
+    else if (slip) tact = `Erreur de placement de la défense : ${c.who.short} est trouvé tout de suite.`;
+    else if (sw && oo.play === 'post' && c.role === 'S' && c.d !== dOf(focus)) tact = `Changement défensif : ${focus.short} se retrouve au poste bas face à ${c.d.short}.`;
+    else if (zn) tact = c.type === 'three' ? 'La zone se resserre, le renversement trouve un tireur.' : c.type === 'rim' ? 'La zone ferme les accès au cercle.' : 'Le ballon trouve un espace au cœur de la zone.';
+    else if (oo.play === 'post' && rnd(s) < 0.7) tact = c.role === 'S' ? `${focus.short} travaille dos au panier face à ${c.d.short}.` : `L’aide arrive sur ${focus.short}, qui ressort le ballon.`;
+    else if (oo.play === 'motion' && rnd(s) < 0.7) tact = c.own ? `Le ballon circule et revient sur ${focus.short}.` : `Le mouvement du ballon libère ${c.who.short}.`;
     else if (pa) tact = c.type === 'rim' ? 'La raquette est verrouillée.' : 'La défense reste dans la raquette et laisse le tir extérieur.';
     else if (pe) tact = c.type === 'three' ? 'Les tireurs sont serrés de près.' : 'Les défenseurs collent aux tireurs, le couloir s’ouvre.';
     else if (oo.play === 'shooter' && c.role === 'H') tact = `${focus.short} ne se libère pas, ${H.short} doit improviser.`;
 
+    if (pressTxt) tact = (pressTxt + ' ' + tact).trim();
     shot(c.who, c.type, c.o, c.d, c.ast && c.ast !== c.who ? c.ast : null, 0, tact);
     return finish();
   };

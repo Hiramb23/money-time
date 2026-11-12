@@ -62,12 +62,14 @@
     const s = {
       seed: opts.seed == null ? (Math.random() * 0x7fffffff) | 0 : opts.seed,
       user: 0, period: 4, clock: 120, shot: 24, score: [0, 0], poss: 0, ball: 'dead', subsOk: true, sit: '',
-      over: false, winner: null, segN: 0, log: [], ato: null, aiTOseg: -1,
+      bc: false, over: false, winner: null, segN: 0, log: [], ato: null, aiTOseg: -1,
       ev: { n: 0, seg: -9, seen: [] }, mods: {}, notes: [],
       habits: [0, 1].map(() => ({ nOff: 0, nDef: 0, play: {}, target: {}, scheme: {} })),
       teams: [],
     };
-    const mine = S.team(opts.team) || MT.TEAMS[ri(s, 0, MT.TEAMS.length - 1)];
+    // équipe tirée au sort : jamais l'adversaire que le joueur a choisi
+    const pool = MT.TEAMS.filter((x) => x.key !== opts.opp);
+    const mine = S.team(opts.team) || pool[ri(s, 0, pool.length - 1)];
     let other = S.team(opts.opp);
     if (!other || other === mine) { const rest = MT.TEAMS.filter((t) => t !== mine); other = rest[ri(s, 0, rest.length - 1)]; }
     [mine, other].forEach((t, ti) => {

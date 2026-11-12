@@ -251,8 +251,8 @@
         const c = E.clone(s);
         MT.ai.orders(c, 1 - u);
         const o = c.teams[1 - u].orders;
-        if (s.poss === u) return `L’assistant : « Ils vont ${L.scheme[o.scheme][0].toLowerCase()}${o.scheme === 'double' ? ' ' + E.getP(s, o.dblTarget).short : ''}. Enfin, je pense. »`;
-        return `L’assistant : « Ça va être ${L.play[o.play][0].toLowerCase()} pour ${E.getP(s, o.target).short}. Enfin, je pense. »`;
+        if (s.poss === u) return `L’assistant : « Attendez-vous à ceci en défense : ${L.scheme[o.scheme][0].toLowerCase()}${o.scheme === 'double' ? ' sur ' + E.getP(s, o.dblTarget).short : ''}. Enfin, je pense. »`;
+        return `L’assistant : « Attendez-vous à ceci : ${L.play[o.play][0].toLowerCase()} pour ${E.getP(s, o.target).short}. Enfin, je pense. »`;
       },
     },
     rookie: {

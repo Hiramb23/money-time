@@ -15,6 +15,8 @@
     iso: { H: 'top', R: 'lblock', K: 'rwing', o: ['lcorner', 'rcorner'] },
     drive: { H: 'lwing', R: 'rblock', K: 'rcorner', o: ['top', 'rwing'] },
     shooter: { S: 'lwing', R: 'lelbow', H: 'top', K: 'rwing', o: ['rcorner'] },
+    post: { S: 'lblock', H: 'lwing', R: 'relbow', K: 'rwing', o: ['top'] },
+    motion: { H: 'top', R: 'lelbow', K: 'rcorner', o: ['lwing', 'rwing'] },
   };
 
   const fmtClock = (c) => {
@@ -64,7 +66,7 @@
       </header>
       <div class="homewrap">
       <div class="hmain">
-        <section><h3><b>1</b>Votre équipe</h3><div class="tgrid">${MT.TEAMS.map(tile).join('')}</div></section>
+        <section><h3><b>1</b>Votre équipe</h3><div class="ochips trand"><button type="button" class="ochip rand ${T ? '' : 'on'}" data-team=""><i>?</i>Au hasard</button></div><div class="tgrid">${MT.TEAMS.map(tile).join('')}</div></section>
         <section><h3><b>2</b>Votre adversaire</h3><div class="ochips">
           <button type="button" class="ochip rand ${h.opp ? '' : 'on'}" data-opp=""><i>?</i>Au hasard</button>
           ${MT.TEAMS.filter((t) => t.key !== h.team).map((t) => `<button type="button" class="ochip ${t.key === h.opp ? 'on' : ''}" data-opp="${t.key}" style="--c:${t.color}"><i></i>${t.name}</button>`).join('')}
@@ -74,15 +76,18 @@
           ${S.FAMILIES.map((f) => `<button type="button" class="scard ${f.key === h.fam ? 'on' : ''}" data-fam="${f.key}"><b>${f.title}</b><small>${f.pitch}</small></button>`).join('')}
         </div></section>
       </div>
-      <aside class="hside" style="--c:${T.color};--ink:${S.ink(T.color)}">
-        <div class="tdetail">
+      <aside class="hside" style="--c:${T ? T.color : '#F2B544'};--ink:${T ? S.ink(T.color) : '#0B1422'}">
+        ${T ? `<div class="tdetail">
           <div class="thead"><span class="badge">${T.abbr}</span><div><h2>${T.name}</h2><p>${T.style}</p></div></div>
           <p class="prof">${T.profile}</p>
           <div class="rates">${ratings(T).map((r) => `<div><span>${r[0]}</span><span class="track"><span style="width:${Math.round(Math.max(6, Math.min(100, (r[1] - 3) / 6 * 100)))}%"></span></span></div>`).join('')}</div>
           <h3>Cinq de départ <span>cliquer un joueur pour sa fiche</span></h3><ul class="roster">${T.players.slice(0, 5).map(row).join('')}</ul>
           <h3>Banc</h3><ul class="roster">${T.players.slice(5).map(row).join('')}</ul>
-        </div>
-        <p class="recap"><b>${T.abbr}</b> contre <b>${O ? O.name : 'un adversaire tiré au sort'}</b> · ${F ? F.title : 'scénario tiré au sort'}</p>
+        </div>` : `<div class="tdetail">
+          <div class="thead"><span class="badge">?</span><div><h2>Équipe tirée au sort</h2><p>La surprise du chef</p></div></div>
+          <p class="prof">Le jeu vous confiera l’une des dix-huit équipes au lancement du défi. Vous découvrirez votre effectif sur le banc : fiches des joueurs et statistiques du match y sont disponibles avant votre première décision.</p>
+        </div>`}
+        <p class="recap"><b>${T ? T.abbr : 'Une équipe tirée au sort'}</b> contre <b>${O ? O.name : 'un adversaire tiré au sort'}</b> · ${F ? F.title : 'scénario tiré au sort'}</p>
         <button type="button" id="launch" class="primary">Lancer le défi</button>
       </aside>
       </div>
@@ -196,12 +201,15 @@
     </div>`;
     if (att) {
       h += optGroup('Système', 'play', L.play, o.play, 2);
-      h += chips(o.play === 'shooter' ? 'Tireur à libérer' : 'Joueur recherché', 'target', mine, o.target);
+      h += chips({ shooter: 'Tireur à libérer', post: 'Intérieur à servir', motion: 'Première option' }[o.play] || 'Joueur recherché', 'target', mine, o.target);
       h += optGroup('Tempo', 'tempo', L.tempo, o.tempo, 3);
       h += `<p class="standing">Défense en place pour la suite : ${L.scheme[o.scheme][0]} · ${L.endgame[o.endgame][0]}</p>`;
     } else {
       h += optGroup('Défense', 'scheme', L.scheme, o.scheme, 2);
       if (o.scheme === 'double') h += chips('Joueur pris à deux', 'dblTarget', opp, o.dblTarget);
+      if (o.scheme === 'press') h += `<p class="note ${E.pressApplies(s) ? 'ok' : ''}">${E.pressApplies(s)
+        ? 'L’adversaire relance depuis l’arrière : le pressing s’applique dès cette possession.'
+        : 'L’adversaire est déjà installé près de votre panier : défense individuelle sur cette possession, le pressing s’appliquera à la prochaine relance.'}</p>`;
       h += optGroup('Fin de possession', 'endgame', L.endgame, o.endgame, 2);
       h += `<p class="standing">Attaque en place pour la suite : ${L.play[o.play][0]} · ${L.tempo[o.tempo][0]}</p>`;
     }
@@ -373,7 +381,13 @@
       if (r.S) pos[r.S] = SP[m.S];
       r.o.forEach((id, i) => (pos[id] = SP[m.o[i]]));
     } else ['top', 'rwing', 'lwing', 'rcorner', 'lblock'].forEach((k, i) => (pos[pv.order[i]] = SP[k]));
-    const k = scheme === 'paint' ? 0.4 : scheme === 'perimeter' ? 0.13 : 0.24;
+    const k = scheme === 'paint' ? 0.4 : scheme === 'perimeter' ? 0.13 : scheme === 'press' ? 0.09 : 0.24;
+    if (scheme === 'zone' && pv.order) {
+      // zone 2-3 : deux joueurs en tête de raquette, trois près du cercle
+      const spots = [[196, 218], [304, 218], [142, 112], [358, 112], [250, 96]];
+      pv.order.forEach((oid, i) => { if (pv.mu[oid]) pos[pv.mu[oid]] = spots[i]; });
+      return pos;
+    }
     Object.keys(pv.mu).forEach((oid) => {
       const a = pos[oid], dx = HOOP[0] - a[0], dy = HOOP[1] - a[1], dist = Math.hypot(dx, dy) || 1;
       const d = Math.max(25, dist * k);
@@ -396,7 +410,8 @@
       const pv = E.preview(s, null);
       let dblBy = null;
       if (o.scheme === 'double') { const other = pv.order.filter((id) => id !== o.dblTarget).pop(); dblBy = pv.mu[other]; }
-      pos = computeLayout(pv, null, o.scheme, o.scheme === 'double' ? o.dblTarget : null, dblBy);
+      const sch = o.scheme === 'press' && !E.pressApplies(s) ? null : o.scheme;
+      pos = computeLayout(pv, null, sch, o.scheme === 'double' ? o.dblTarget : null, dblBy);
       holder = pv.order[0];
       G.mu = pv.mu;
     }
@@ -421,7 +436,7 @@
       G.off = E.teamOf(G.s, st.roles.H);
       syncTokens(G.off);
       G.mu = st.mu;
-      const pv = { roles: st.roles, mu: st.mu };
+      const pv = { roles: st.roles, mu: st.mu, order: st.order };
       applyLayout(computeLayout(pv, st.play, st.scheme, st.dbl, st.dblBy), false);
       hold(st.roles.H);
       await sleep(750);

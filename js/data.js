@@ -4,7 +4,7 @@
   const MT = (root.MT = root.MT || {});
 
   // à tenir à jour avec versions.html
-  MT.VERSION = '1.1';
+  MT.VERSION = '1.2';
 
   // k : clé, label : libellé complet, short : libellé de carte, fat : part de l'attribut perdue à 100 % de fatigue
   MT.ATTRS = [
@@ -34,6 +34,8 @@
       iso: ['Isolation', 'Un contre un. Peu de pertes de balle, tout repose sur le duel.'],
       shooter: ['Système pour un tireur', 'Écrans loin du ballon pour libérer le joueur recherché.'],
       drive: ['Attaque du cercle', 'Pénétration : fautes provoquées, mais fatigue et pertes de balle.'],
+      post: ['Jeu au poste bas', 'Servir un intérieur dos au panier : duel près du cercle ou passe après l’aide. Entrée de balle risquée.'],
+      motion: ['Jeu en mouvement', 'Passes et coupes pour déplacer la défense. Des occasions variées, mais une coordination exigeante.'],
     },
     tempo: {
       quick: ['Tir rapide', 'Garde du temps pour la suite, tir moins travaillé.'],
@@ -45,6 +47,8 @@
       paint: ['Protéger le cercle', 'Ferme la raquette, laisse des tirs extérieurs.'],
       perimeter: ['Limiter les 3 points', 'Colle aux tireurs, ouvre le chemin du cercle.'],
       double: ['Prendre à deux', 'Étouffe un joueur, laisse un partenaire seul.'],
+      zone: ['Défense de zone', 'Défendre les espaces et fermer les pénétrations. Vulnérable aux bonnes passes et aux tireurs démarqués.'],
+      press: ['Pressing tout terrain', 'Presser dès la relance pour voler le ballon ou retarder l’attaque. Fatigue et risque de débordement.'],
     },
     endgame: {
       normal: ['Défense normale', 'Contester sans consigne particulière.'],

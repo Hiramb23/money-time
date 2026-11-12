@@ -79,17 +79,35 @@
         sc.iso *= (1 - 0.2 * f('paint')) * (1 + 0.2 * f('switch'));
         sc.shooter *= (1 + 0.3 * f('paint')) * (1 - 0.5 * f('perimeter')) * (1 - 0.3 * f('switch'));
         sc.pnr *= 1 - 0.3 * f('switch');
+        sc.drive *= 1 - 0.4 * f('zone'); sc.iso *= 1 - 0.35 * f('zone'); sc.shooter *= 1 + 0.25 * f('zone');
         for (const k in sc) {
           let v = sc[k];
           if (need3) v *= (k === 'shooter' ? 1.5 : 1) * (eff(p, 'three') < 6 ? 0.5 : 1);
           cands.push({ play: k, target: p.id, w: Math.pow(Math.max(v, 1), 5) });
         }
       }
+      // poste bas : un intérieur adroit et costaud, surtout si la défense change ou ne protège pas le cercle
+      const feeder = Math.max.apply(null, on.map((p) => eff(p, 'pas')));
+      for (const p of on) {
+        if (p.h < 203) continue;
+        let v = eff(p, 'fin') + 0.4 * eff(p, 'mid') + 0.3 * eff(p, 'iq') + E.clamp((p.h - 200) / 4, -2, 3) + 0.25 * feeder;
+        v *= (1 - 0.5 * f('paint')) * (1 + 0.3 * f('switch')) * (1 - 0.3 * f('zone')) * (1 - 0.3 * f('double'));
+        if (need3) v *= 0.4;
+        cands.push({ play: 'post', target: p.id, w: Math.pow(Math.max(v, 1), 5) });
+      }
+      // jeu en mouvement : un cinq de passeurs, contre les prises à deux et les zones
+      {
+        let v = (E.mean(on.map((p) => eff(p, 'pas'))) + E.mean(on.map((p) => eff(p, 'iq')))) * 0.95 + E.mean(on.map((p) => eff(p, 'spd'))) * 0.3 + 1;
+        v *= (1 + 0.4 * f('double')) * (1 + 0.35 * f('zone'));
+        if (need3) v *= 0.7;
+        if (c <= 10) v *= 0.7;
+        cands.push({ play: 'motion', target: targets[0].id, w: Math.pow(Math.max(v, 1), 5) });
+      }
       const ch = E.wpick(s, cands, (x) => x.w);
       o.play = ch.play; o.target = ch.target;
     } else {
       const fp = (k) => (hab.nOff ? (hab.play[k] || 0) / hab.nOff : 0);
-      const w = { switch: 1, paint: 1, perimeter: 1, double: 0.4 };
+      const w = { switch: 1, paint: 1, perimeter: 1, double: 0.4, zone: 0.6, press: 0 };
       w.switch += 2 * fp('pnr') + fp('shooter');
       w.paint += 2.5 * fp('drive') + fp('iso');
       w.perimeter += 2 * fp('shooter') + 0.5 * fp('pnr');
@@ -98,6 +116,20 @@
       let top = null, share = 0;
       for (const p of opp) { const n = hab.target[p.id] || 0; if (hab.nOff && n / hab.nOff > share) { share = n / hab.nOff; top = p; } }
       if (hab.nOff >= 2 && share >= 0.6) w.double += 1.5;
+      w.paint += 1.5 * fp('post'); w.switch *= 1 - 0.5 * fp('post'); w.double += 0.8 * fp('post');
+      w.double *= 1 - 0.6 * fp('motion'); w.perimeter += 0.8 * fp('motion');
+      // zone : contre une équipe de duels, pas contre des tireurs ni de bons passeurs
+      w.zone += 1.5 * fp('iso') + 1.5 * fp('drive') + fp('post');
+      if (E.mean(opp.map((p) => eff(p, 'three'))) > 6.2) w.zone *= 0.6;
+      if (E.mean(opp.map((p) => eff(p, 'pas'))) > 6.5) w.zone *= 0.7;
+      // pressing : seulement sur une relance, pour revenir au score ou faire tourner le chrono
+      if (E.pressApplies(s)) {
+        w.press = 0.15;
+        if (margin < 0 && c <= 60) w.press += 1.2;
+        if (margin <= -4) w.press += 1.5;
+        if (margin > 0 && c <= 35) w.press += 0.4;
+        if (E.mean(on.map((p) => p.fatigue)) > 75) w.press *= 0.4;
+      }
       if (margin >= 3 && c <= 24) w.perimeter += 5;
       o.scheme = E.wpick(s, Object.keys(w), (k) => w[k]);
       o.dblTarget = (top || maxBy(opp, E.scorer)).id;

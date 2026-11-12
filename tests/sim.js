@@ -107,6 +107,43 @@ say(`Lambert à 3 pts — système tireur vs 3 pts limités : ${(c.pct * 100).to
 say(`Lambert à 3 pts — isolation vs 3 pts limités : ${(b.pct * 100).toFixed(1)} % (${b.shots} tirs, ouverture ${b.open.toFixed(2)})`);
 assert(a.pct > c.pct + 0.03 && c.pct > b.pct, 'un tireur libéré doit mieux réussir qu’un tir contesté');
 
+/* Équilibre des consignes : points par séquence pour chaque système face à chaque défense, toutes équipes confondues. */
+{
+  const plays = Object.keys(MT.L.play), schemes = Object.keys(MT.L.scheme), n = 1400;
+  const big = (five) => E.maxBy(five, (p) => p.h + 2 * p.fin), shooter = (five) => E.maxBy(five, (p) => p.three);
+  const cell = (play, scheme, i) => {
+    const s = MT.scenarios.generate({ team: MT.TEAMS[i % K].key, opp: MT.TEAMS[(i * 7 + 3) % K].key === MT.TEAMS[i % K].key ? MT.TEAMS[(i + 1) % K].key : MT.TEAMS[(i * 7 + 3) % K].key, seed: 90000 + i });
+    s.poss = 0; s.clock = 120; s.shot = 24; s.score = [100, 100]; s.bc = scheme === 'press';
+    s.teams.forEach((T) => T.players.forEach((p) => { p.fatigue = 50; p.fouls = 1; p.form = 0; }));
+    const five = E.lineup(s, 0);
+    const target = play === 'post' ? big(five) : play === 'shooter' ? shooter(five) : E.maxBy(five, E.scorer);
+    Object.assign(s.teams[0].orders, { play, target: target.id, tempo: 'normal' });
+    Object.assign(s.teams[1].orders, { scheme, endgame: 'normal', dblTarget: target.id });
+    const c0 = s.clock;
+    E.playSegment(s);
+    return { pts: s.score[0] - 100, to: s.log[0].to ? 1 : 0, t: c0 - s.clock };
+  };
+  const tab = {}, rowAvg = {}, colAvg = {};
+  let lo = 9, hi = 0;
+  say('points par séquence (pertes de balle %) — lignes : attaque, colonnes : ' + schemes.join(' | '));
+  for (const play of plays) {
+    const line = [];
+    for (const scheme of schemes) {
+      let pts = 0, to = 0, tt = 0;
+      for (let i = 0; i < n; i++) { const r = cell(play, scheme, i); pts += r.pts; to += r.to; tt += r.t; }
+      const v = pts / n;
+      tab[play + scheme] = v; lo = Math.min(lo, v); hi = Math.max(hi, v);
+      rowAvg[play] = (rowAvg[play] || 0) + v / schemes.length; colAvg[scheme] = (colAvg[scheme] || 0) + v / plays.length;
+      line.push(`${v.toFixed(2)} (${Math.round(to / n * 100)}) ${(tt / n).toFixed(0)}s`);
+    }
+    say(`  ${play.padEnd(8)} ${line.join(' | ')}  → moyenne ${rowAvg[play].toFixed(2)}`);
+  }
+  say('  moyenne par défense : ' + schemes.map((k) => `${k} ${colAvg[k].toFixed(2)}`).join(' · '));
+  assert(lo > 0.8 && hi < 1.4, 'aucune combinaison attaque/défense ne doit écraser les autres');
+  assert(Math.max(...Object.values(rowAvg)) - Math.min(...Object.values(rowAvg)) < 0.16, 'les systèmes d’attaque restent proches en moyenne');
+  assert(Math.max(...Object.values(colAvg)) - Math.min(...Object.values(colAvg)) < 0.16, 'les défenses restent proches en moyenne');
+}
+
 /* Un temps mort ne remet pas l'équipe à neuf. */
 {
   const s = MT.scenarios.generate({ team: 'SEA', opp: 'PIT', seed: 7 });

@@ -335,3 +335,14 @@ table.stats .form .hi { color: var(--red); }
 
 .hlinks { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 20px; margin-top: 8px; }
 .hlinks span { color: var(--mut); }
+
+#panel .note { font-size: 12px; line-height: 1.35; color: var(--acc); border-left: 3px solid var(--acc); padding: 4px 8px; margin: -2px 0 8px; }
+#panel .note.ok { color: var(--good); border-left-color: var(--good); }
+
+/* six systèmes et six défenses : options plus compactes */
+#panel { gap: 8px; }
+.opt { padding: 5px 8px; gap: 1px; }
+.opt small { line-height: 1.2; }
+.opts { gap: 5px; }
+
+.trand { margin-bottom: 8px; }
