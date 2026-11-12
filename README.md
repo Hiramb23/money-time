@@ -34,6 +34,7 @@ puis ouvrez <http://localhost:8123>. Le jeu est un site statique sans dépendanc
 - **Règles** : deux temps morts au plus par équipe ; pénalité dès la deuxième faute d'équipe des deux dernières minutes ; exclusion à six fautes ; remplacements aux arrêts de jeu sur coup de sifflet ou temps mort, pas après un panier ; ballon en jeu, seul le porteur du ballon peut demander un temps mort.
 - **Statistiques** : la feuille de match des 46 premières minutes est tirée au lancement du défi (les points retombent sur le score), puis tenue par le moteur. Chaque joueur a une forme du soir (de -1 à +1) qui pèse au plus trois points de réussite au tir et évolue avec ses tirs.
 - **Événements aléatoires** : au plus trois par match (quatre avec prolongation), jamais deux séquences de suite ni deux fois le même, environ deux par partie en moyenne. La probabilité (22 % par décision) est dans `EV.roll`.
+- **Affichage** : trois paliers choisis d'après la largeur disponible, à la fin de `css/style.css` — téléphone (moins de 600 px, ou téléphone couché) avec trois volets, tablette en portrait (600 à 999 px), grand écran (1000 px et plus). Les zones d'appui sont agrandies sur écran tactile.
 - **Calibrage** : tous les coefficients sont dans `js/engine.js` et restent à éprouver en jeu. `tests/sim.html` affiche les points par séquence de chaque système face à chaque défense.
 
 ## Licence et crédits

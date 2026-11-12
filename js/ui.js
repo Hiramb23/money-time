@@ -126,8 +126,17 @@
     feed({ kind: 'intro', text: `Défi — ${s.challenge.title}. ${s.challenge.desc}` });
     beginDecision();
   }
+  /* volets de l'affichage téléphone ; sans effet sur grand écran, où tout est visible */
+  function setTab(t) {
+    $('#match').dataset.tab = t;
+    document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === t));
+    if (t === 'feed') { const f = $('#feed'); f.scrollTop = f.scrollHeight; }
+  }
+  $('#tabs').addEventListener('click', (e) => { const b = e.target.closest('[data-tab]'); if (b) setTab(b.dataset.tab); });
+
   function beginDecision() {
     const s = G.s;
+    setTab('panel');
     const evs = MT.ai.intervene(s, 1 - G.user).concat(MT.events.tick(s));
     evs.forEach(feed);
     popBrief(evs);
@@ -164,15 +173,15 @@
     const team = (i) => {
       const T = s.teams[i];
       const dots = [0, 1].map((k) => `<i class="${k < v.to[i] ? 'on' : ''}"></i>`).join('');
-      const pen = v.give[i] > 0 ? `${v.give[i]} faute à donner` : '<b class="pen">en pénalité</b>';
+      const pen = v.give[i] > 0 ? `${v.give[i]} <span class="lw">faute </span>à donner` : '<b class="pen">en pénalité</b>';
       return `<div class="tm tm${i} ${v.poss === i ? 'ball' : ''}" style="--c:${T.color}">
-        <div class="tname"><span class="sw"></span>${T.name}${i === s.user ? '<em>vous</em>' : ''}<span class="poss">● ballon</span></div>
-        <div class="tmeta"><span class="tos" title="Temps morts restants">Temps morts ${dots}</span><span>Fautes d’équipe ${v.tf[i]} · ${pen}</span></div>
+        <div class="tname"><span class="sw"></span><span class="lw">${T.name}</span><span class="sh">${T.abbr}</span>${i === s.user ? '<em>vous</em>' : ''}<span class="poss">●<span class="lw"> ballon</span></span></div>
+        <div class="tmeta"><span class="tos" title="Temps morts restants"><span class="lw">Temps morts</span><span class="sh">TM</span> ${dots}</span><span><span class="lw">Fautes d’équipe</span><span class="sh">Fautes</span> ${v.tf[i]} · ${pen}</span></div>
       </div>`;
     };
     $('#board').innerHTML = `${team(0)}
       <div class="sc">${v.score[0]}</div>
-      <div class="mid"><img class="logo" src="assets/logo.png" alt="Money Time"><div class="per">${v.period > 4 ? 'Prolongation' : '4ᵉ quart-temps'}</div>
+      <div class="mid"><img class="logo" src="assets/logo.png" alt="Money Time"><div class="per"><span class="lw">${v.period > 4 ? 'Prolongation' : '4ᵉ quart-temps'}</span><span class="sh">${v.period > 4 ? 'Prol.' : '4ᵉ QT'}</span></div>
         <div class="clk">${fmtClock(v.clock)}</div>
         <div class="shot" title="Chrono de possession">${v.clock <= 0 ? '—' : Math.ceil(Math.min(v.shot, v.clock))}</div></div>
       <div class="sc">${v.score[1]}</div>${team(1)}`;
@@ -367,7 +376,7 @@
       const p = E.getP(s, id), T = s.teams[E.teamOf(s, id)];
       const el = document.createElementNS('http://www.w3.org/2000/svg', 'g');
       el.setAttribute('class', 'tok'); el.id = 'tok-' + id; el.dataset.id = id;
-      el.innerHTML = `<title>${p.name}</title><circle r="14.5" fill="${T.color}"/><text y="4.5" style="fill:${T.ink}">${p.num}</text>`;
+      el.innerHTML = `<title>${p.name}</title><circle class="hit" r="23"/><circle r="14.5" fill="${T.color}"/><text y="4.5" style="fill:${T.ink}">${p.num}</text>`;
       g.appendChild(el);
       place(id, G.pos[id] || [250, 380], true);
     });
@@ -486,6 +495,7 @@
     hidePop();
     renderPanel(); renderBench();
     $('#fastBtn').hidden = false;
+    setTab('feed');
     const evs = MT.step(s);
     for (const e of evs) {
       if (e.kind === 'read') { feed(e); renderBoard(e.snap); continue; }
@@ -572,11 +582,11 @@
           <td class="form">${f ? `<span class="${f[0]}">${f[1]}</span>` : '<span class="dim">—</span>'}</td>${cells(p.st, p.fouls)}</tr>`;
       };
       return `<h3 style="--c:${T.color}"><i></i>${T.name}${ti === s.user ? ' <em>vous</em>' : ''}<b>${s.score[ti]}</b></h3>
-        <table class="stats"><thead><tr><th></th><th>Joueur</th><th>Forme</th><th title="Minutes jouées">MIN</th><th title="Points">PTS</th><th title="Tirs réussis / tentés">Tirs</th><th>%</th>
+        <div class="tscroll"><table class="stats"><thead><tr><th></th><th>Joueur</th><th>Forme</th><th title="Minutes jouées">MIN</th><th title="Points">PTS</th><th title="Tirs réussis / tentés">Tirs</th><th>%</th>
           <th title="Tirs à trois points réussis / tentés">3 pts</th><th title="Lancers francs réussis / tentés">LF</th><th title="Rebonds">REB</th><th title="Passes décisives">PD</th>
           <th title="Interceptions">INT</th><th title="Contres">CTR</th><th title="Balles perdues">BP</th><th title="Fautes personnelles">F</th></tr></thead>
           <tbody>${order.map(row).join('')}
-          <tr class="tot"><td></td><th>Équipe</th><td></td>${cells(tot, T.players.reduce((a, p) => a + p.fouls, 0)).replace('<td>0</td>', '<td></td>')}</tr></tbody></table>`;
+          <tr class="tot"><td></td><th>Équipe</th><td></td>${cells(tot, T.players.reduce((a, p) => a + p.fouls, 0)).replace('<td>0</td>', '<td></td>')}</tr></tbody></table></div>`;
     };
     const v = s.over ? 'Match terminé' : `${s.period > 4 ? 'Prolongation' : '4ᵉ quart-temps'} · ${fmtClock(s.clock)} à jouer`;
     $('#modal').innerHTML = `<div class="sheet statsheet">

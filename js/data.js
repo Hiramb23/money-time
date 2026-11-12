@@ -4,7 +4,7 @@
   const MT = (root.MT = root.MT || {});
 
   // à tenir à jour avec versions.html
-  MT.VERSION = '1.2';
+  MT.VERSION = '1.3';
 
   // k : clé, label : libellé complet, short : libellé de carte, fat : part de l'attribut perdue à 100 % de fatigue
   MT.ATTRS = [

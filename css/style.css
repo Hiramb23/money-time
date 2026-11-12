@@ -346,3 +346,143 @@ table.stats .form .hi { color: var(--red); }
 .opts { gap: 5px; }
 
 .trand { margin-bottom: 8px; }
+
+/* ============================================================
+   Paliers d'affichage — le choix se fait sur la place disponible :
+   grand écran (1000 px et plus) : tout ce qui précède ;
+   tablette en portrait (600 à 999 px) : terrain et journal en haut, consignes et effectif côte à côte ;
+   téléphone (moins de 600 px, ou téléphone couché) : terrain en haut, trois volets, bouton fixé en bas.
+   ============================================================ */
+.screen { height: 100dvh; }
+#tabs, .sh { display: none; }
+.tok circle.hit { fill: transparent; stroke: none; }
+.tscroll { overflow-x: auto; }
+
+@media (max-width: 999px) {
+  #match { grid-template-rows: none; }
+  main, #left { display: contents; }
+  #board { grid-area: board; }
+  #courtWrap { grid-area: court; }
+  #feed { grid-area: feed; }
+  #panel { grid-area: panel; }
+  #bench { grid-area: bench; grid-template-columns: minmax(0, 1fr); align-content: start; overflow-y: auto; min-height: 0; }
+  .cards { grid-auto-flow: row; grid-template-columns: 1fr 1fr; }
+  .tocol { order: -1; }
+  #home { padding: 14px 14px 84px; }
+  #launch { position: fixed; left: 10px; right: 10px; bottom: 10px; width: auto; z-index: 4; box-shadow: 0 0 0 10px var(--bg); }
+}
+
+/* ---------- tablette couchée, petit portable : affichage ordinateur resserré ---------- */
+@media (min-width: 1000px) and (max-width: 1180px) {
+  #bench { grid-template-columns: 5fr 4fr 180px; gap: 10px; }
+  .card { padding: 6px; }
+  .ctop { flex-wrap: wrap; row-gap: 2px; }
+  .ctop .num { flex: 1; }
+  .ctop .nm { order: 3; flex: 0 0 100%; }
+  .fl { flex-wrap: wrap; }
+}
+
+/* ---------- tablette en portrait ---------- */
+@media (min-width: 600px) and (max-width: 999px) and (min-height: 521px) {
+  #match { grid-template: "board board" auto "court feed" clamp(240px, 36dvh, 400px) "panel bench" minmax(0, 1fr) / minmax(0, 1.2fr) minmax(0, 1fr); gap: 10px; padding: 0 10px 10px; }
+  #board { margin: 0 -10px; }
+  #bench { border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+  /* bandeau : noms complets, libellés courts */
+  .lw, .tname > .sh, .mid .logo { display: none; }
+  .sh, .tname > .lw { display: inline; }
+  #board { grid-template-columns: minmax(0, 1fr) auto auto auto minmax(0, 1fr); gap: 12px; padding: 8px 14px; }
+  .tname { font-size: 16px; }
+  .tmeta { flex-wrap: wrap; gap: 0 10px; }
+  .sc { font-size: 32px; min-width: 60px; }
+}
+
+/* ---------- téléphone ---------- */
+@media (max-width: 599px), (max-width: 999px) and (max-height: 520px) {
+  #match { grid-template: "board" auto "court" auto "tabs" auto "body" minmax(0, 1fr) / minmax(0, 1fr); padding-bottom: 66px; }
+  #panel, #bench, #feed { grid-area: body; border-width: 0; border-radius: 0; padding: 10px; }
+  #courtWrap { height: min(80vw, 36dvh); border-width: 0; border-radius: 0; }
+  #tabs { grid-area: tabs; display: grid; grid-template-columns: repeat(3, 1fr); background: var(--navy); border-bottom: 1px solid var(--line); }
+  #tabs button { border: 0; border-bottom: 3px solid transparent; border-radius: 0; padding: 11px 4px 8px; background: none; font-weight: 600; color: var(--mut); }
+  #tabs button.on { color: var(--ivory); border-bottom-color: var(--acc); }
+  #match:not([data-tab="bench"]) #bench, #match:not([data-tab="feed"]) #feed { display: none; }
+  /* le volet Consignes replié garde son bouton, fixé en bas de l'écran */
+  #match:not([data-tab="panel"]) #panel { display: contents; }
+  #match:not([data-tab="panel"]) #panel > :not(#go) { display: none; }
+  #go { position: fixed; left: 8px; right: 8px; bottom: 8px; width: auto; margin: 0; padding: 14px; z-index: 4; box-shadow: 0 0 0 8px var(--bg); }
+  #feed { font-size: 14px; }
+  .opt small { font-size: 12px; }
+  .sit h2 { font-size: 17px; }
+
+  #board { grid-template-columns: minmax(0, 1fr) auto auto auto minmax(0, 1fr); grid-template-areas: "n0 s0 mid s1 n1" "m0 m0 mid m1 m1"; gap: 2px 8px; padding: 6px 10px; }
+  .tm { display: contents; }
+  .tm0 .tname { grid-area: n0; } .tm1 .tname { grid-area: n1; }
+  .tm0 .tmeta { grid-area: m0; } .tm1 .tmeta { grid-area: m1; }
+  .sc { grid-area: s0; font-size: 30px; min-width: 44px; }
+  #board .mid ~ .sc { grid-area: s1; }
+  #board .mid { grid-area: mid; display: block; padding: 0 8px; }
+  .mid .logo, .lw, .tname em { display: none; }
+  .sh { display: inline; }
+  .mid .clk { font-size: 22px; }
+  .tname { font-size: 16px; gap: 6px; }
+  .tname .sw { height: 16px; width: 9px; }
+  .tmeta { font-size: 11px; gap: 0 8px; flex-wrap: wrap; }
+
+  .hhead .logo { width: 96px; }
+  .hhead .intro { font-size: 13px; }
+  .tgrid, .sgrid { grid-template-columns: 1fr 1fr; }
+  .hside { padding: 14px; }
+
+  #result { padding: 14px; place-items: start center; }
+  .res .logo { width: 76px; }
+  .res h1 { font-size: 34px; }
+  .final { flex-wrap: wrap; gap: 6px 12px; font-size: 15px; margin-bottom: 18px; }
+  .final b { font-size: 40px; }
+  .final span { flex: 0 0 100%; justify-content: center; }
+  .final span:last-child { order: 3; }
+  .moments li { grid-template-columns: 78px 1fr; gap: 10px; padding: 10px; }
+  .acts { flex-direction: column; }
+
+  #modal { padding: 8px; }
+  .sheet { padding: 16px 14px; max-height: 96dvh; }
+  .cols { column-count: 1; }
+  .row { grid-template-columns: 118px 1fr 58px; }
+  .shead { gap: 10px; align-items: start; padding-right: 30px; }
+  .bignum { font-size: 34px; min-width: 46px; }
+  .shead h2 { font-size: 20px; }
+  .evsheet h2 { font-size: 21px; }
+  .evsheet .evtext { font-size: 15px; }
+  table.stats tr > :first-child { display: none; }
+  table.stats tbody th, table.stats thead th:nth-child(2) { position: sticky; left: 0; background: var(--slate); }
+  table.stats tr.on th { background: color-mix(in srgb, var(--ivory) 7%, var(--slate)); }
+
+  #pop { top: 62%; max-width: 92vw; padding: 10px 16px 12px; }
+  #pop p { font-size: 16px; }
+  #pop.big p { font-size: 24px; }
+  #pop.k-steal p, #pop.k-to p, #pop.k-foul p { font-size: 18px; }
+  #pop.k-end p, #pop.k-period p { font-size: 20px; }
+  #toast { bottom: 78px; width: max-content; max-width: 92vw; }
+}
+
+/* ---------- téléphone couché : terrain à gauche, volets à droite ---------- */
+@media (min-width: 600px) and (max-width: 999px) and (max-height: 520px) {
+  #match { grid-template: "board board" auto "court tabs" auto "court body" minmax(0, 1fr) / minmax(0, 44%) minmax(0, 1fr); padding-bottom: 0; }
+  #courtWrap { height: auto; }
+  #panel, #bench, #feed { padding-bottom: 66px; }
+  #go { left: calc(44% + 8px); }
+  #pop { top: 50%; }
+}
+
+/* ---------- écrans tactiles : zones d'appui plus grandes ---------- */
+@media (pointer: coarse) {
+  .info { width: 30px; height: 30px; font-size: 14px; }
+  .close { width: 40px; height: 40px; }
+  .opt { padding: 9px 10px; }
+  .chip { padding: 8px 12px 8px 7px; }
+  .oppp { padding: 8px 8px 8px 4px; }
+  .ochip { padding: 9px 14px 9px 10px; }
+  .roster button { padding: 8px 4px; }
+  #timeout, #statsBtn { padding: 12px 10px; }
+  #fastBtn { padding: 10px 14px; font-size: 13px; }
+  table.stats button { padding: 6px 0; }
+  .hlinks { gap: 12px 20px; }
+}
