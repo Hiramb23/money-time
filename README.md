@@ -24,6 +24,7 @@ puis ouvrez <http://localhost:8123>. Le jeu est un site statique sans dépendanc
 | `js/scenarios.js` | Familles de défis et tirage des paramètres |
 | `js/events.js` | Douze événements aléatoires, chacun avec ses choix et leurs effets |
 | `js/ui.js`, `css/style.css` | Les trois écrans : lancement, match, résultat |
+| `a-propos.html`, `versions.html`, `mentions-legales.html`, `css/pages.css` | Pages d'information ; le numéro de version est à tenir à jour dans `versions.html` et dans `js/data.js` |
 | `tests/sim.html` | Simulations de contrôle (6 000 matchs entre les 18 équipes) à ouvrir dans le navigateur |
 
 ## Arbitrages retenus pour ce prototype

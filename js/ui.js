@@ -86,7 +86,8 @@
         <button type="button" id="launch" class="primary">Lancer le défi</button>
       </aside>
       </div>
-      <footer class="hfoot">Un jeu de <b>Hiramb23</b>, aidé de Claude · Licence <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.fr" target="_blank" rel="license noopener">CC BY-NC-SA 4.0</a> : partage et adaptation autorisés, sans usage commercial, en citant l’auteur et sous la même licence.</footer>
+      <footer class="hfoot">Un jeu de <b>Hiramb23</b>, aidé de Claude · Licence <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.fr" target="_blank" rel="license noopener">CC BY-NC-SA 4.0</a> : partage et adaptation autorisés, sans usage commercial, en citant l’auteur et sous la même licence.
+        <nav class="hlinks"><a href="a-propos.html">À propos</a><a href="versions.html">Versions</a><a href="mentions-legales.html">Mentions légales et confidentialité</a><span>Version ${MT.VERSION}</span></nav></footer>
     </div>`;
   }
   $('#home').addEventListener('click', (e) => {
