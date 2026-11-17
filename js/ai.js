@@ -42,6 +42,9 @@
       let want = false;
       if (!s.subsOk && tired >= 2 && rnd(s) < 0.6) want = true;
       if (s.poss === ai && s.ball === 'live' && s.clock <= 24 && margin <= 0 && margin >= -3 && rnd(s) < 0.6) want = true;
+      // la salle pousse contre lui : temps mort pour casser l'élan
+      const g = s.crowd || 0;
+      if (s.home != null && (ai === s.home ? g <= -55 : g >= 55) && rnd(s) < 0.5) want = true;
       if (want) { s.aiTOseg = s.segN; out.push(E.callTimeout(s, ai)); }
     }
     if (s.subsOk) out.push.apply(out, subs(s, ai));

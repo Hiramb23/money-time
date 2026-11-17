@@ -486,3 +486,23 @@ table.stats .form .hi { color: var(--red); }
   table.stats button { padding: 6px 0; }
   .hlinks { gap: 12px 20px; }
 }
+
+/* ---------- le public ---------- */
+.crowd { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr minmax(0, 520px) 1fr; align-items: center; gap: 12px; margin-top: 2px; }
+.clab { grid-column: 1; justify-self: end; font-size: 11px; color: var(--mut); white-space: nowrap; }
+.clab b { color: var(--ivory); font-weight: 600; }
+.cbar { grid-column: 2; position: relative; height: 8px; background: var(--deep); border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+.cfill { position: absolute; top: 0; bottom: 0; border-radius: 4px; transition: left 0.5s ease, width 0.5s ease; }
+.cbar i { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 2px; margin-left: -1px; background: var(--mut); opacity: 0.7; }
+.bar { position: relative; }
+.bar > span.ghost { position: absolute; left: 0; top: 0; opacity: 0.3; }
+.bar > span:not(.ghost) { position: relative; }
+.fatrow .lifted { color: var(--good); }
+.vnote { font-size: 12px; color: var(--mut); margin-top: 6px; }
+#feed .k-crowd { color: var(--acc); font-style: italic; }
+#pop.k-crowd p { font-size: 22px; font-weight: 700; }
+@media (max-width: 599px), (max-width: 999px) and (max-height: 520px) {
+  #board { grid-template-areas: "n0 s0 mid s1 n1" "m0 m0 mid m1 m1" "cr cr cr cr cr"; }
+  .crowd { grid-area: cr; grid-template-columns: auto minmax(0, 1fr); gap: 8px; margin-top: 4px; }
+  #pop.k-crowd p { font-size: 17px; }
+}

@@ -56,7 +56,7 @@
     ps.forEach((p) => delete p._w);
   }
 
-  /** opts : { team, opp, fam, seed } — opp et fam sont tirés au sort s'ils sont absents. */
+  /** opts : { team, opp, fam, venue, seed } — opp, fam et venue ('home' | 'away') sont tirés au sort s'ils sont absents. */
   S.generate = function (opts) {
     opts = opts || {};
     const s = {
@@ -131,6 +131,11 @@
     if (rnd(s) < 0.7) { s.ball = 'dead'; s.subsOk = true; s.sit = 'Remise en jeu ligne de touche'; }
     else { s.ball = 'live'; s.subsOk = false; s.shot = ri(s, 16, 24); s.sit = 'Ballon en jeu'; }
     s.challenge = { fam, title: S.FAMILIES.find((f) => f.key === fam).title, desc };
+    // lieu du match et ambiance de départ : une salle plutôt acquise, d'autant plus que les siens mènent
+    s.home = opts.venue === 'home' ? 0 : opts.venue === 'away' ? 1 : rnd(s) < 0.5 ? 0 : 1;
+    const hm = s.score[s.home] - s.score[1 - s.home];
+    s.crowd = Math.round(E.clamp(35 + 4 * E.clamp(hm, -5, 5) + (rnd(s) - 0.5) * 20, -40, 60));
+    E.crowdSync(s);
     s.teams.forEach((T, i) => {
       const on = E.lineup(s, i), opp = E.lineup(s, 1 - i);
       T.orders = {

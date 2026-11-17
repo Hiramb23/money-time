@@ -217,7 +217,9 @@
     },
     crowd: {
       title: 'Le public s’enflamme',
+      // ne survient qu'à domicile, quand la salle est déjà chaude (voir EV.roll)
       make(s, u) {
+        if (s.home !== u || (s.crowd || 0) < 45) return null;
         return {
           d: {},
           text: 'La salle est debout et le bruit devient assourdissant. Vos joueurs le sentent et veulent courir.',
@@ -231,6 +233,7 @@
         if (i === 1) return 'Vous faites signe de calmer le jeu.';
         E.lineup(s, u).forEach((p) => form(p, 0.15));
         s.mods.rush = { team: u, n: 2 };
+        E.cheer(s, u, 8);
         return 'Vous lâchez les chevaux : vos joueurs se nourrissent du bruit de la salle.';
       },
     },
@@ -339,8 +342,10 @@
     if (s.over || s.segN < 1) return null;
     const ev = s.ev;
     if (ev.n >= (s.period > 4 ? 4 : 3) || s.segN - ev.seg < 2) return null;
-    if (rnd(s) > 0.22) return null;
-    const keys = Object.keys(DEFS).filter((k) => !ev.seen.includes(k));
+    // la salle bascule en feu : l'événement du public passe avant le tirage habituel
+    const hot = !ev.seen.includes('crowd') && DEFS.crowd.make(s, s.user) && rnd(s) < 0.6;
+    if (!hot && rnd(s) > 0.22) return null;
+    const keys = hot ? ['crowd'] : Object.keys(DEFS).filter((k) => !ev.seen.includes(k));
     while (keys.length) {
       const k = keys.splice(Math.floor(rnd(s) * keys.length), 1)[0];
       const m = DEFS[k].make(s, s.user);

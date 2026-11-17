@@ -3,7 +3,7 @@
   'use strict';
   const E = MT.engine, L = MT.L, eff = E.eff;
   const $ = (q) => document.querySelector(q);
-  const G = { s: null, start: null, user: 0, home: { team: 'SEA', opp: '', fam: '' }, sel: null, busy: false, fast: false, pos: {}, mu: {}, holder: null };
+  const G = { s: null, start: null, user: 0, home: { team: 'SEA', opp: '', fam: '', venue: '' }, sel: null, busy: false, fast: false, pos: {}, mu: {}, holder: null };
 
   const SP = {
     top: [250, 338], lwing: [88, 250], rwing: [412, 250], lcorner: [34, 72], rcorner: [466, 72],
@@ -24,6 +24,13 @@
     return c.toFixed(1);
   };
   const fatClass = (f) => (f < 50 ? 'ok' : f < 75 ? 'mid' : 'hi');
+  /** Jauge de fatigue : la fatigue ressentie en plein, la part effacée par le public en transparence. */
+  const fatBar = (p) => {
+    const f = Math.round(p.fatigue), r = Math.round(E.felt(p));
+    return `<span class="bar ${fatClass(r)}">${r < f ? `<span class="ghost" style="width:${f}%"></span>` : ''}<span style="width:${r}%"></span></span>`;
+  };
+  const fatTip = (p) => { const f = Math.round(p.fatigue), r = Math.round(E.felt(p)); return r < f ? `Fatigue ${f} %, ressentie ${r} % grâce au public` : `Fatigue ${f} %`; };
+  const VENUES = { home: 'À domicile', away: 'À l’extérieur' };
   const sleep = (ms) => new Promise((r) => setTimeout(r, G.fast ? ms * 0.12 : ms));
   const show = (id) => ['home', 'match', 'result'].forEach((k) => ($('#' + k).hidden = k !== id));
   let toastT;
@@ -71,7 +78,11 @@
           <button type="button" class="ochip rand ${h.opp ? '' : 'on'}" data-opp=""><i>?</i>Au hasard</button>
           ${MT.TEAMS.filter((t) => t.key !== h.team).map((t) => `<button type="button" class="ochip ${t.key === h.opp ? 'on' : ''}" data-opp="${t.key}" style="--c:${t.color}"><i></i>${t.name}</button>`).join('')}
         </div></section>
-        <section><h3><b>3</b>Le scénario</h3><div class="sgrid">
+        <section><h3><b>3</b>Le lieu du match</h3><div class="ochips">
+          <button type="button" class="ochip rand ${h.venue ? '' : 'on'}" data-venue=""><i>?</i>Au hasard</button>
+          ${Object.keys(VENUES).map((k) => `<button type="button" class="ochip ${k === h.venue ? 'on' : ''}" data-venue="${k}">${VENUES[k]}</button>`).join('')}
+        </div><p class="vnote">À domicile, le public pousse derrière vous ; à l’extérieur, il gêne vos lancers francs et votre maîtrise du ballon.</p></section>
+        <section><h3><b>4</b>Le scénario</h3><div class="sgrid">
           <button type="button" class="scard rand ${h.fam ? '' : 'on'}" data-fam=""><b>Au hasard</b><small>Le jeu tire une situation pour vous.</small></button>
           ${S.FAMILIES.map((f) => `<button type="button" class="scard ${f.key === h.fam ? 'on' : ''}" data-fam="${f.key}"><b>${f.title}</b><small>${f.pitch}</small></button>`).join('')}
         </div></section>
@@ -87,7 +98,7 @@
           <div class="thead"><span class="badge">?</span><div><h2>Équipe tirée au sort</h2><p>La surprise du chef</p></div></div>
           <p class="prof">Le jeu vous confiera l’une des dix-huit équipes au lancement du défi. Vous découvrirez votre effectif sur le banc : fiches des joueurs et statistiques du match y sont disponibles avant votre première décision.</p>
         </div>`}
-        <p class="recap"><b>${T ? T.abbr : 'Une équipe tirée au sort'}</b> contre <b>${O ? O.name : 'un adversaire tiré au sort'}</b> · ${F ? F.title : 'scénario tiré au sort'}</p>
+        <p class="recap"><b>${T ? T.abbr : 'Une équipe tirée au sort'}</b> contre <b>${O ? O.name : 'un adversaire tiré au sort'}</b> · ${h.venue ? VENUES[h.venue].toLowerCase() : 'lieu tiré au sort'} · ${F ? F.title : 'scénario tiré au sort'}</p>
         <button type="button" id="launch" class="primary">Lancer le défi</button>
       </aside>
       </div>
@@ -98,16 +109,17 @@
   $('#home').addEventListener('click', (e) => {
     const h = G.home;
     const pick = (attr) => { const el = e.target.closest('[data-' + attr + ']'); return el ? el.dataset[attr] : null; };
-    const team = pick('team'), opp = pick('opp'), fam = pick('fam'), prof = pick('prof');
+    const team = pick('team'), opp = pick('opp'), fam = pick('fam'), prof = pick('prof'), venue = pick('venue');
     if (prof != null) openProfile(h.team, prof);
     else if (team != null) { h.team = team; if (h.opp === team) h.opp = ''; renderHome(); }
     else if (opp != null) { h.opp = opp; renderHome(); }
     else if (fam != null) { h.fam = fam; renderHome(); }
+    else if (venue != null) { h.venue = venue; renderHome(); }
     else if (e.target.closest('#launch')) newChallenge();
   });
 
   function newChallenge() {
-    G.s = S.generate({ team: G.home.team, opp: G.home.opp, fam: G.home.fam });
+    G.s = S.generate({ team: G.home.team, opp: G.home.opp, fam: G.home.fam, venue: G.home.venue });
     G.start = E.clone(G.s);
     enterMatch();
   }
@@ -124,6 +136,10 @@
     $('#tokens').innerHTML = '';
     show('match');
     feed({ kind: 'intro', text: `Défi — ${s.challenge.title}. ${s.challenge.desc}` });
+    const host = s.teams[s.home];
+    feed({ kind: 'crowd', team: s.home, text: s.home === s.user
+      ? `Match à domicile : le public de ${E.city(host)} est derrière vous. ${E.crowdLevel(s.crowd)}.`
+      : `Match à l’extérieur, dans la salle de ${E.city(host)}. ${E.crowdLevel(s.crowd)} : à vous de la faire taire.` });
     beginDecision();
   }
   /* volets de l'affichage téléphone ; sans effet sur grand écran, où tout est visible */
@@ -184,7 +200,18 @@
       <div class="mid"><img class="logo" src="assets/logo.png" alt="Money Time"><div class="per"><span class="lw">${v.period > 4 ? 'Prolongation' : '4ᵉ quart-temps'}</span><span class="sh">${v.period > 4 ? 'Prol.' : '4ᵉ QT'}</span></div>
         <div class="clk">${fmtClock(v.clock)}</div>
         <div class="shot" title="Chrono de possession">${v.clock <= 0 ? '—' : Math.ceil(Math.min(v.shot, v.clock))}</div></div>
-      <div class="sc">${v.score[1]}</div>${team(1)}`;
+      <div class="sc">${v.score[1]}</div>${team(1)}${crowdBar(v.crowd)}`;
+  }
+
+  /** Jauge du public : elle s'étend du centre vers l'équipe que l'ambiance avantage. */
+  function crowdBar(g) {
+    const s = G.s, fav = g >= 0 ? s.home : 1 - s.home, w = Math.abs(g) / 2;
+    const left = fav === 0 ? 50 - w : 50;
+    const host = s.teams[s.home];
+    return `<div class="crowd" title="Ambiance de la salle : ${g > 0 ? '+' : ''}${g} (de -100 à +100). Salle chaude : les joueurs de ${E.city(host)} sentent moins la fatigue, les visiteurs sont gênés aux lancers francs et dans la maîtrise du ballon. Salle qui siffle : c’est ${E.city(host)} qui est gênée.">
+      <span class="clab"><span class="lw">Public de </span>${E.city(host)}<span class="lw"> (domicile)</span> · <b>${E.crowdLevel(g)}</b></span>
+      <span class="cbar"><span class="cfill" style="left:${left}%;width:${w}%;background:${s.teams[fav].color}"></span><i></i></span>
+    </div>`;
   }
 
   /* ---------- panneau de décision ---------- */
@@ -224,7 +251,7 @@
     }
     h += `<div class="grp"><h3>Cinq adverse <span>cliquer pour la fiche</span></h3><div class="oppfive">${opp.map((p) =>
       `<button type="button" class="oppp" data-info="${p.id}"><i style="background:${s.teams[1 - u].color};color:${s.teams[1 - u].ink}">${p.num}</i><span>${p.short}</span><em>${p.pos}</em>
-        <span class="bar ${fatClass(p.fatigue)}"><span style="width:${Math.round(p.fatigue)}%"></span></span><em>${p.fouls} f.</em></button>`).join('')}</div></div>`;
+        ${fatBar(p)}<em>${p.fouls} f.</em></button>`).join('')}</div></div>`;
     h += `<button type="button" id="go" class="primary" ${G.busy ? 'disabled' : ''}>${G.busy ? 'Séquence en cours…' : 'Jouer la séquence'}</button>`;
     $('#panel').innerHTML = h;
     $('#panel').classList.toggle('busy', G.busy);
@@ -245,7 +272,7 @@
       <div class="ctop"><span class="num">${p.num}</span><span class="nm">${p.short}</span>
         <button type="button" class="info" data-info="${p.id}" title="Fiche détaillée">i</button></div>
       <div class="fl"><span>${p.pos}${p.pos2 !== p.pos ? '/' + p.pos2 : ''}</span><span class="${p.fouls >= 5 ? 'warn' : ''}">${out ? 'Exclu' : 'Fautes ' + p.fouls}</span></div>
-      <div class="fatrow" title="Fatigue"><div class="bar ${fatClass(p.fatigue)}"><span style="width:${Math.round(p.fatigue)}%"></span></div><span>${Math.round(p.fatigue)} %</span></div>
+      <div class="fatrow" title="${fatTip(p)}">${fatBar(p)}<span class="${E.felt(p) < p.fatigue - 0.5 ? 'lifted' : ''}">${Math.round(E.felt(p))} %</span></div>
       <div class="traits">${traits(p)}</div>
     </div>`;
   }
@@ -325,7 +352,7 @@
   const POP_TAG = {
     setup: 'Mise en place', action: 'Action', made: 'Panier', miss: 'Manqué', ft: 'Lancer franc', foul: 'Faute', steal: 'Interception',
     to: 'Balle perdue', oreb: 'Rebond offensif', dreb: 'Rebond', sub: 'Changement', timeout: 'Temps mort', hold: 'Fin de match',
-    buzz: 'Buzzer', event: 'Événement', period: 'Prolongation', end: 'Coup de sifflet final',
+    buzz: 'Buzzer', event: 'Événement', crowd: 'Public', period: 'Prolongation', end: 'Coup de sifflet final',
   };
   const readMs = (t) => Math.min(3400, 750 + t.length * 27);
   let popT;
@@ -544,7 +571,7 @@
         <span class="val">${drop ? `<s>${b}</s> ${e.toFixed(1)}` : b}</span></div>`;
     }).join('');
     const state = live
-      ? `<span class="pill ${fatClass(p.fatigue)}">Fatigue ${Math.round(p.fatigue)} %</span>
+      ? `<span class="pill ${fatClass(E.felt(p))}">${E.felt(p) < p.fatigue - 0.5 ? `Fatigue ${Math.round(p.fatigue)} % · ressentie ${Math.round(E.felt(p))} % grâce au public` : `Fatigue ${Math.round(p.fatigue)} %`}</span>
             <span class="pill ${p.fouls >= 5 ? 'hi' : ''}">${p.fouls} faute${p.fouls > 1 ? 's' : ''} sur 6</span>
             <span class="pill">${p.fouls >= 6 ? 'Exclu' : live.on ? 'Sur le terrain' : 'Sur le banc'}</span>${formPill(p)}`
       : `<span class="pill">${T.players.indexOf(p) < 5 ? 'Titulaire' : 'Remplaçant'}</span>`;
@@ -556,7 +583,7 @@
           <p>${p.age} ans · ${flag(p)} ${(MT.COUNTRIES[p.nat] || [''])[0]}</p>
           <p class="state">${state}</p></div></div>
       <p class="legend">${live
-        ? '<span class="lg base"></span>valeur habituelle <span class="lg eff"></span>valeur effective avec la fatigue actuelle'
+        ? `<span class="lg base"></span>valeur habituelle <span class="lg eff"></span>valeur effective avec la fatigue ${p.lift ? 'ressentie (le public en efface une partie)' : 'actuelle'}`
         : '<span class="lg eff"></span>valeurs habituelles, notées de 1 à 10 — en match, la fatigue les fait baisser'}</p>
       <div class="cols">${Object.keys(groups).map((g) => `<div class="g"><h3>${g}</h3>${rows(groups[g])}</div>`).join('')}</div>
     </div>`;

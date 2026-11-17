@@ -35,8 +35,10 @@
     for (const t of s.teams) for (const p of t.players) if (p.id === id) return p;
     return null;
   }
-  function eff(p, k) { return p[k] * (1 - (FAT[k] || 0) * p.fatigue / 100); }
-  E.getP = getP; E.eff = eff;
+  /** Fatigue ressentie : le soutien du public (p.lift, de 0 à 0,5) en efface une partie. */
+  const felt = (p) => p.fatigue * (1 - (p.lift || 0));
+  function eff(p, k) { return p[k] * (1 - (FAT[k] || 0) * felt(p) / 100); }
+  E.getP = getP; E.eff = eff; E.felt = felt;
   E.clone = (s) => JSON.parse(JSON.stringify(s));
   E.lineup = (s, t) => s.teams[t].onCourt.map((id) => getP(s, id));
   E.bench = (s, t) => s.teams[t].players.filter((p) => !s.teams[t].onCourt.includes(p.id));
@@ -83,9 +85,45 @@
   };
 
   E.snap = (s) => ({
-    clock: s.clock, shot: s.shot, score: s.score.slice(), poss: s.poss, period: s.period,
+    clock: s.clock, shot: s.shot, score: s.score.slice(), poss: s.poss, period: s.period, crowd: s.crowd || 0,
     to: s.teams.map((t) => t.timeouts), tf: s.teams.map((t) => t.teamFouls), give: s.teams.map((t) => t.toGive),
   });
+
+  /* ---------- le public ----------
+     s.home : l'équipe qui reçoit. s.crowd : de -100 (la salle siffle les siens) à +100 (la salle en feu derrière les siens).
+     Salle chaude : les joueurs qui reçoivent sentent moins la fatigue (jusqu'à la moitié), les visiteurs sont gênés aux
+     lancers francs et dans la conservation du ballon. Salle qui siffle : c'est l'équipe qui reçoit qui est gênée, un peu moins. */
+  const CROWD = ['La salle siffle', 'Salle tendue', 'Salle attentive', 'Salle chaude', 'Salle en feu'];
+  const lvl = (g) => (g >= 60 ? 2 : g >= 20 ? 1 : g > -20 ? 0 : g > -60 ? -1 : -2);
+  E.crowdLevel = (g) => CROWD[lvl(g) + 2];
+  E.city = (T) => T.name.split(' ').slice(0, -1).join(' ');
+  E.crowdSync = function (s) {
+    const x = Math.max(0, (s.crowd || 0) / 100);
+    s.teams.forEach((T, t) => T.players.forEach((p) => (p.lift = t === s.home ? Math.round(50 * x) / 100 : 0)));
+  };
+  /** Gêne causée par la salle à l'équipe t, de 0 à 1. */
+  E.hostile = function (s, t) {
+    if (s.home == null) return 0;
+    const x = (s.crowd || 0) / 100;
+    return t === s.home ? Math.max(0, -x) * 0.75 : Math.max(0, x);
+  };
+  /** Action de valeur v réussie par l'équipe t (négative pour une maladresse) : la salle réagit.
+      Au-delà de 40 (dans un sens ou dans l'autre), elle s'approche de l'extrême de plus en plus difficilement ;
+      elle revient vers le neutre sans frein.
+      Renvoie { text, team } quand l'ambiance change de palier, sinon null. */
+  E.cheer = function (s, t, v) {
+    if (s.home == null || !v) return null;
+    const g0 = s.crowd || 0, d = t === s.home ? v : -v;
+    const far = g0 === 0 || Math.sign(d) === Math.sign(g0);
+    s.crowd = clamp(Math.round(g0 + (far ? d * clamp(1 - (Math.abs(g0) - 40) / 70, 0.15, 1) : d)), -100, 100);
+    E.crowdSync(s);
+    const a = lvl(g0), b = lvl(s.crowd), H = s.teams[s.home], c = E.city(H);
+    if (b > a && b > 0) return { team: s.home, text: b === 2 ? `La salle explose ! Le public de ${c} pousse derrière les siens.` : `Le public de ${c} se lève et donne de la voix.` };
+    if (b < a && b < 0) return { team: 1 - s.home, text: b === -2 ? `Des sifflets descendent des tribunes : le public de ${c} lâche les siens.` : `Murmures dans les tribunes : le public de ${c} s’impatiente.` };
+    if (b === 0 && a > 0) return { team: 1 - s.home, text: `${s.teams[1 - s.home].name} fait taire le public de ${c}.` };
+    if (b === 0 && a < 0) return { team: s.home, text: `Le public de ${c} se reprend et encourage de nouveau les siens.` };
+    return null;
+  };
 
   /* ---------- interventions ---------- */
   E.canTimeout = function (s, t) {
@@ -102,7 +140,10 @@
     if (s.poss === t) s.bc = false; // temps mort de l'attaque : remise en jeu en zone avant
     for (const tm of s.teams)
       for (const p of tm.players) p.fatigue = clamp(p.fatigue - (tm.onCourt.includes(p.id) ? 7 : 4), 0, 100);
-    return { kind: 'timeout', team: t, text: `Temps mort ${T.name}. Les joueurs soufflent un peu.`, anim: [], snap: E.snap(s) };
+    // casser l'élan de la salle quand elle pousse contre soi
+    const g = s.crowd || 0, calm = s.home != null && Math.abs(g) >= 20 && (t === s.home ? g < 0 : g > 0);
+    if (calm) { s.crowd = Math.round(g * 0.4); E.crowdSync(s); }
+    return { kind: 'timeout', team: t, text: `Temps mort ${T.name}${calm ? ' pour casser l’élan de la salle' : ''}. Les joueurs soufflent un peu.`, anim: [], snap: E.snap(s) };
   };
   E.canSub = function (s) {
     if (s.over) return { ok: false, why: 'Match terminé.' };
@@ -210,9 +251,14 @@
     const emit = (kind, text, anim, extra) => {
       const e = Object.assign({ kind, text, anim: (anim || []).filter(Boolean), snap: E.snap(s), team: oi }, extra || {});
       ev.push(e);
-      if (text) seg.texts.push(text);
+      if (text && kind !== 'crowd') seg.texts.push(text);
       return e;
     };
+    // réaction du public : cheer() avant l'action (le bandeau suit), roar() juste après (le commentaire suit)
+    let roarMsg = null;
+    const late = () => s.clock <= 30 || s.period > 4;
+    const cheer = (t, v, fixed) => { const m = E.cheer(s, t, fixed ? v : Math.min(30, v * (late() ? 1.3 : 1))); if (m) roarMsg = m; };
+    const roar = () => { if (roarMsg) { emit('crowd', roarMsg.text, [], { team: roarMsg.team }); roarMsg = null; } };
     // bc : la possession suivante part de l'arrière (panier, lancers, rebond défensif, ballon rendu)
     const turnBall = (ball, subsOk, sit, bc) => { s.poss = di; s.shot = 24; s.ball = ball; s.subsOk = subsOk; s.sit = sit; s.bc = !!bc; };
 
@@ -231,15 +277,18 @@
       emit('sub', `${p.short} est exclu pour six fautes ! ${sub.short} le remplace.`, [{ a: 'swap', out: p.id, in: sub.id }], { team: ti });
     }
     function fts(victim, n) {
-      let lastMade = false;
+      let lastMade = false, nMade = 0;
       for (let i = 0; i < n; i++) {
-        lastMade = rnd(s) < 0.4 + 0.055 * eff(victim, 'ft');
+        lastMade = rnd(s) < 0.4 + 0.055 * eff(victim, 'ft') - 0.1 * E.hostile(s, oi);
         victim.st.fta++;
-        if (lastMade) { s.score[oi]++; victim.st.ftm++; victim.st.pts++; }
+        if (lastMade) { s.score[oi]++; victim.st.ftm++; victim.st.pts++; nMade++; }
         const final = i === n - 1;
         if (final && lastMade) turnBall('dead', true, 'Remise en jeu après lancers francs', true);
+        if (!lastMade && s.clock <= 60) cheer(oi, -5, true); // lancer manqué dans la dernière minute
+        else if (final && n === 2 && nMade === 2) cheer(oi, 4);
         emit('ft', `${victim.short}, lancer ${i + 1} sur ${n} : ${lastMade ? pick(s, ['réussi.', 'dedans.', 'ça rentre.']) : pick(s, ['manqué.', 'trop court.', 'ça ressort.'])}`,
           [{ a: 'ft', id: victim.id, made: lastMade }], { pts: lastMade ? 1 : 0 });
+        roar();
       }
       if (!lastMade) rebound(victim, 'ft', 0);
     }
@@ -294,7 +343,7 @@
       const nofoul = dd.endgame === 'nofoul';
       const pm = pMake(sh, type, o, d) * (flags.heave ? 0.45 : 1);
       let pf = type === 'rim' ? 0.12 + 0.1 * (1 - o) : type === 'mid' ? 0.03 : 0.015;
-      pf *= (nofoul ? 0.4 : 1) * (1 + 0.6 * d.fatigue / 100) * (oo.play === 'drive' && type === 'rim' ? 1.25 : 1);
+      pf *= (nofoul ? 0.4 : 1) * (1 + 0.6 * felt(d) / 100) * (oo.play === 'drive' && type === 'rim' ? 1.25 : 1);
       pf *= (d.soft ? 0.3 : 1) * (d.id === hunt ? 1.6 : 1);
       if (flags.heave) pf = 0.01;
       const fouled = rnd(s) < pf;
@@ -315,10 +364,19 @@
       const anim = [ast && { a: 'pass', to: sh.id }, depth === 0 && !flags.heave && { a: 'go', id: sh.id, where: type }, { a: 'shot', id: sh.id, made }];
       const pre = (tact ? tact + ' ' : '') + act;
       if (made) {
+        const before = s.score[oi] - s.score[di];
         s.score[oi] += pts;
         if (!fouled) turnBall('dead', false, 'Remise en jeu après panier', true);
         const dunk = type === 'rim' && o > 0.6 && eff(sh, 'dunk') >= 6;
+        // grille du spectacle (voir README) : du dunk avec la faute au simple panier à deux points
+        let v = dunk ? (fouled ? 25 : 18) : type === 'three' ? (fouled ? 18 : 12) : fouled ? 12 : 4;
+        if (depth > 0) v = Math.max(v, 7);
+        const swing = before < 0 && before + pts >= 0;
+        if (s.clock <= 1 || (swing && s.clock <= 30)) cheer(oi, 25, true); // au buzzer, ou égalité / avantage dans les 30 dernières secondes
+        else if (v >= 25) cheer(oi, 25, true);
+        else cheer(oi, v * (swing ? 1.5 : 1));
         emit('made', `${pre} : ${dunk ? 'dunk !' : pick(s, ['ça rentre !', 'panier !', 'dedans !'])} +${pts}${fouled ? ' et la faute !' : ''}`, anim, { pts });
+        roar();
         if (fouled) foul(d, sh, 1);
       } else if (fouled) {
         emit('miss', `${pre} : manqué, mais il y a faute.`, anim);
@@ -327,9 +385,10 @@
         const df = E.lineup(s, di);
         const bl = maxBy(df, (p) => eff(p, 'blk'));
         const blocked = type !== 'three' && rnd(s) < (0.05 + 0.03 * eff(bl, 'blk')) * (1 - o);
-        if (blocked) bl.st.blk++;
+        if (blocked) { bl.st.blk++; cheer(di, 18); }
         const good = o >= 0.52 && depth === 0 && !flags.heave;
         emit('miss', `${pre} : ${blocked ? `contré par ${bl.short} !` : good ? pick(s, ['la position était bonne, mais ça ressort.', 'bien joué, mais le tir est manqué.']) : pick(s, ['ça ressort.', 'manqué.', 'le cercle refuse.'])}`, anim);
+        roar();
         rebound(sh, type, depth);
       }
     }
@@ -406,7 +465,7 @@
     let pressTxt = '', pressBeat = false;
     if (pressOn) {
       const k = dd.endgame === 'nofoul' ? 0.6 : 1; // sans faute : pressing moins agressif
-      const P = 0.3 * mean(def.map((p) => eff(p, 'spd'))) + 0.35 * mean(def.map((p) => eff(p, 'stl'))) + 0.2 * mean(def.map((p) => eff(p, 'dext'))) + 0.15 * mean(def.map((p) => p.end * (1 - p.fatigue / 250)));
+      const P = 0.3 * mean(def.map((p) => eff(p, 'spd'))) + 0.35 * mean(def.map((p) => eff(p, 'stl'))) + 0.2 * mean(def.map((p) => eff(p, 'dext'))) + 0.15 * mean(def.map((p) => p.end * (1 - felt(p) / 250)));
       const B = 0.4 * eff(H, 'drb') + 0.3 * eff(H, 'pas') + 0.3 * mean(off.map((p) => eff(p, 'iq')));
       const g = (P - B) / 10;
       for (const p of def) p.fatigue += 1.6 * k * (1 + (5 - p.end) * 0.1);
@@ -419,11 +478,14 @@
           const th = wpick(s, def, (p) => Math.pow(eff(p, 'stl'), 2));
           th.st.stl++;
           turnBall('live', false, 'Ballon en jeu après interception');
+          cheer(di, 18);
           emit('steal', `Pressing tout terrain : ${th.short} piège ${H.short} et vole le ballon !`, [{ a: 'steal', id: th.id }], { team: di });
         } else {
           turnBall('dead', true, 'Remise en jeu après perte de balle', true);
+          cheer(di, 7);
           emit('to', `Pressing tout terrain : ${H.short} ne franchit pas le milieu de terrain dans les huit secondes. Ballon rendu.`, [], { team: di });
         }
+        roar();
         return finish();
       }
       if (rnd(s) < 0.035 * k) {
@@ -447,7 +509,9 @@
         seg.to = true;
         th.st.stl++; H.st.to++;
         turnBall('live', false, 'Ballon en jeu après interception');
+        cheer(di, 12);
         emit('steal', `${th.short} arrache le ballon des mains de ${H.short} !`, [{ a: 'steal', id: th.id }], { team: di });
+        roar();
       } else {
         spend(s.clock);
         emit('hold', `${H.short} garde le ballon et laisse filer les dernières secondes.`, []);
@@ -475,7 +539,7 @@
       : oo.play === 'motion' ? (offPas + offIQ - 12) * 0.006 // coordination du cinq
       : (eff(H, 'drb') + eff(H, 'pas') - 12) * 0.005;
     let pTO = TO_BASE[oo.play] + (mean(def.map((p) => eff(p, 'stl'))) - 5) * 0.008 - care
-      + 0.05 * H.fatigue / 100 + (rush ? 0.04 : 0) + (quick ? 0.01 : 0) + (use < 4 ? 0.02 : 0) - (dd.endgame === 'nofoul' ? 0.01 : 0);
+      + 0.05 * felt(H) / 100 + 0.04 * E.hostile(s, oi) + (rush ? 0.04 : 0) + (quick ? 0.01 : 0) + (use < 4 ? 0.02 : 0) - (dd.endgame === 'nofoul' ? 0.01 : 0);
     if (activeDbl) pTO += 0.07 - (eff(focus, 'pas') - 5) * 0.01;
     if (use < 1.5) pTO = 0.03;
     if (rnd(s) < clamp(pTO, 0.02, 0.3)) {
@@ -488,22 +552,28 @@
         const th = wpick(s, def, (p) => Math.pow(eff(p, 'stl'), 2));
         th.st.stl++;
         turnBall('live', false, 'Ballon en jeu après interception');
+        cheer(di, 12);
         emit('steal', dbTxt + pick(s, [`${th.short} coupe la ligne de passe : interception !`, `${th.short} vole le ballon à ${loser.short} !`, `Ballon dévié puis récupéré par ${th.short} !`]),
           [{ a: 'steal', id: th.id }], { team: di });
+        roar();
       } else if (rnd(s) < 0.25) {
         loser.fouls++;
         turnBall('dead', true, 'Remise en jeu après faute offensive', true);
+        cheer(di, 7);
         emit('to', dbTxt + `Passage en force de ${loser.short} (${loser.fouls}e faute personnelle). Ballon rendu.`, [], { team: di });
+        roar();
         if (loser.fouls >= 6) foulOut(loser, oi);
       } else {
         turnBall('dead', true, 'Remise en jeu après perte de balle', true);
+        cheer(oi, activeDbl ? -3 : -6); // balle perdue sans pression : la salle gronde
         emit('to', dbTxt + pick(s, [`Mauvaise passe de ${loser.short}, le ballon file en touche.`, `${loser.short} marche. Ballon rendu.`, `${loser.short} perd le contrôle, sortie de balle.`]), [], { team: di });
+        roar();
       }
       return finish();
     }
 
     // faute défensive hors tir
-    let pNSF = 0.04 * (dd.endgame === 'nofoul' ? 0.35 : 1) * (1 + 0.8 * mean(def.map((p) => p.fatigue)) / 100) + (activeDbl ? 0.02 : 0);
+    let pNSF = 0.04 * (dd.endgame === 'nofoul' ? 0.35 : 1) * (1 + 0.8 * mean(def.map(felt)) / 100) + (activeDbl ? 0.02 : 0);
     if (use < 1.5) pNSF = 0;
     if (rnd(s) < pNSF) {
       spend(use * (0.3 + 0.5 * rnd(s)));
