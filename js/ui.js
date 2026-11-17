@@ -424,17 +424,23 @@
       if (r.S) pos[r.S] = SP[m.S];
       r.o.forEach((id, i) => (pos[id] = SP[m.o[i]]));
     } else ['top', 'rwing', 'lwing', 'rcorner', 'lblock'].forEach((k, i) => (pos[pv.order[i]] = SP[k]));
+    return defendLayout(pos, pv.mu, pv.order, scheme, dbl, dblBy);
+  }
+  /** Place les défenseurs d'après les attaquants déjà placés dans pos (mu : attaquant → défenseur). */
+  function defendLayout(pos, mu, order, scheme, dbl, dblBy) {
     const k = scheme === 'paint' ? 0.4 : scheme === 'perimeter' ? 0.13 : scheme === 'press' ? 0.09 : 0.24;
-    if (scheme === 'zone' && pv.order) {
+    if (scheme === 'zone' && order) {
       // zone 2-3 : deux joueurs en tête de raquette, trois près du cercle
       const spots = [[196, 218], [304, 218], [142, 112], [358, 112], [250, 96]];
-      pv.order.forEach((oid, i) => { if (pv.mu[oid]) pos[pv.mu[oid]] = spots[i]; });
+      order.forEach((oid, i) => { if (mu[oid]) pos[mu[oid]] = spots[i]; });
       return pos;
     }
-    Object.keys(pv.mu).forEach((oid) => {
-      const a = pos[oid], dx = HOOP[0] - a[0], dy = HOOP[1] - a[1], dist = Math.hypot(dx, dy) || 1;
+    Object.keys(mu).forEach((oid) => {
+      const a = pos[oid];
+      if (!a) return;
+      const dx = HOOP[0] - a[0], dy = HOOP[1] - a[1], dist = Math.hypot(dx, dy) || 1;
       const d = Math.max(25, dist * k);
-      pos[pv.mu[oid]] = [a[0] + dx / dist * d, a[1] + dy / dist * d];
+      pos[mu[oid]] = [a[0] + dx / dist * d, a[1] + dy / dist * d];
     });
     if (dbl && dblBy && pos[dbl]) pos[dblBy] = [pos[dbl][0] + (pos[dbl][0] < 250 ? 24 : -24), pos[dbl][1] - 16];
     return pos;
@@ -518,12 +524,65 @@
     return best;
   }
 
+  /* ---------- déroulé des systèmes : deux ou trois temps avant le tir ---------- */
+  const ARC = 237.5;
+  /** Ramène un tireur à trois points derrière l'arc (les coins sont dans le prolongement de la ligne droite). */
+  function outArc(xy) {
+    if (xy[1] <= 140) return xy[0] <= 36 || xy[0] >= 464 ? xy : [xy[0] < 250 ? 26 : 474, xy[1]];
+    const dx = xy[0] - HOOP[0], dy = xy[1] - HOOP[1], d = Math.hypot(dx, dy) || 1;
+    if (d >= ARC + 12) return xy;
+    return [HOOP[0] + dx / d * (ARC + 20), Math.min(390, HOOP[1] + dy / d * (ARC + 20))];
+  }
+  /** Un temps du système : les attaquants bougent, chaque défenseur suit le sien selon la défense choisie. */
+  async function beat(moves, ms, after) {
+    const L = G.lay, off = {};
+    shown(G.off).forEach((p) => { if (G.pos[p.id]) off[p.id] = G.pos[p.id]; });
+    Object.assign(off, moves);
+    applyLayout(defendLayout(off, L.mu, L.order, L.scheme, L.dbl, L.dblBy), false);
+    if (after) after();
+    await sleep(ms);
+  }
+  /** Déroulé du système annoncé, jusqu'à l'option retenue par le moteur (st.id tire, servi par st.from). */
+  async function runPlay(st) {
+    const L = G.lay;
+    if (!L || !L.roles) return;
+    const r = L.roles, H = r.H, me = st.id, three = st.type === 'three', B = [];
+    const help = (id, at, to) => () => { const h = helper(id, at); if (h) place(h, to); };
+    if (L.play === 'pnr') {
+      B.push([{ [r.R]: [272, 316] }, 450]); // l'écran est posé sur le porteur
+      B.push([{ [H]: me === H && three ? [348, 302] : [326, 262], [r.R]: me === r.R || !three ? [262, 150] : [300, 326] }, 520]); // le porteur passe l'écran, l'intérieur plonge
+    } else if (L.play === 'iso') {
+      B.push([{ [r.R]: [92, 132] }, 420]); // l'intérieur libère le côté
+      B.push([{ [H]: me === H && three ? [236, 354] : [274, 318] }, 420]); // premier appui du porteur
+    } else if (L.play === 'drive') {
+      B.push([{ [H]: [150, 206], [r.R]: [292, 104] }, 520, help(H, [150, 206], [178, 176])]); // pénétration, l'aide se resserre
+    } else if (L.play === 'shooter' && r.S) {
+      B.push([{ [r.S]: [150, 94], [r.R]: [176, 150] }, 450]); // le tireur descend vers la ligne de fond, l'écran se prépare
+      B.push([{ [r.S]: me === r.S && st.type === 'mid' ? [166, 198] : [98, 268], [r.R]: me === r.R ? [226, 128] : [180, 162] }, 520]); // il ressort de l'écran
+    } else if (L.play === 'post' && r.S) {
+      B.push([{ [r.S]: [206, 112], [H]: [112, 238] }, 420]); // l'intérieur prend position dos au panier
+      B.push([{}, 380, () => hold(r.S)]); // entrée de balle
+      if (me !== r.S) B.push([me === r.R ? { [r.R]: [262, 124] } : {}, 420, help(r.S, [206, 112], [226, 132])]); // l'aide arrive, le ballon ressort
+    } else if (L.play === 'motion') {
+      const [o1, o2] = r.o;
+      if (o2) B.push([{ [H]: [250, 140] }, 450, () => hold(o2)]); // passe sur l'aile, le passeur coupe dans la raquette
+      B.push([Object.assign({ [H]: [40, 92] }, o1 ? { [o1]: [250, 338] } : {}), 500, () => o1 && hold(o1)]); // il ressort dans le coin, renversement
+    }
+    for (const [m, ms, after] of st.prelude ? B.slice(0, 1) : B) await beat(m, ms, after);
+    if (st.prelude || !me) return;
+    if (three && G.pos[me]) { const o = outArc(G.pos[me]); if (o !== G.pos[me]) await beat({ [me]: o }, 320); }
+    // le ballon rejoint le passeur avant la passe décisive
+    if (st.from && G.holder !== me && G.holder !== st.from) { hold(st.from); await sleep(380); }
+  }
+
   async function animStep(st) {
     const near = (xy) => [xy[0] + (HOOP[0] - xy[0]) * 0.22, xy[1] + (HOOP[1] - xy[1]) * 0.22];
     if (st.a !== 'ft') G.ftFor = null;
+    if (st.a === 'play') { await runPlay(st); return; }
     if (st.a === 'setup') {
       G.off = E.teamOf(G.s, st.roles.H);
       syncTokens(G.off);
+      G.lay = { play: st.play, roles: st.roles, mu: st.mu, order: st.order, scheme: st.scheme, dbl: st.dbl, dblBy: st.dblBy };
       G.mu = st.mu;
       const pv = { roles: st.roles, mu: st.mu, order: st.order };
       applyLayout(computeLayout(pv, st.play, st.scheme, st.dbl, st.dblBy), false);
@@ -589,7 +648,8 @@
         // l'action d'abord, le verdict une fois le ballon arrivé
         const pre = e.text.slice(0, cut), res = e.text.slice(cut + 3);
         pop(e.kind === 'ft' ? 'ft' : 'action', pre, e.team);
-        await sleep(readMs(pre) * 0.55);
+        // le déroulé du système occupe déjà le temps de lecture
+        await sleep(readMs(pre) * (e.anim[0] && e.anim[0].a === 'play' ? 0.2 : 0.55));
         for (const st of e.anim) await animStep(st);
         feed(e);
         renderBoard(e.snap);
@@ -598,8 +658,8 @@
       } else {
         feed(e);
         pop(e.kind, e.text, e.team);
-        if (e.kind === 'to' && /touche|sortie de balle/.test(e.text)) ballOut();
         for (const st of e.anim) await animStep(st);
+        if (e.kind === 'to' && /touche|sortie de balle/.test(e.text)) ballOut();
         renderBoard(e.snap);
         await sleep(readMs(e.text) * (e.kind === 'setup' ? 0.6 : 1));
       }

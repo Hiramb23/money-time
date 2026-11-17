@@ -361,7 +361,9 @@
       else if (type === 'three') act = ast ? `${ast.short} trouve ${sh.short} derrière l’arc (tir ${lab})` : `${sh.short} dégaine à trois points (tir ${lab})`;
       else if (type === 'mid') act = ast ? `${ast.short} sert ${sh.short} à mi-distance (tir ${lab})` : `${sh.short} s’arrête à mi-distance (tir ${lab})`;
       else act = ast ? `${ast.short} sert ${sh.short} près du cercle (tir ${lab})` : `${sh.short} va jusqu’au cercle (tir ${lab})`;
-      const anim = [ast && { a: 'pass', to: sh.id }, depth === 0 && !flags.heave && { a: 'go', id: sh.id, where: type }, { a: 'shot', id: sh.id, made }];
+      // 'play' : déroulé du système jusqu'au tir (affichage seulement), avec l'option retenue et le passeur
+      const anim = [depth === 0 && !flags.heave && { a: 'play', id: sh.id, role: flags.role, type, from: ast && ast.id },
+        ast && { a: 'pass', to: sh.id, from: ast.id }, depth === 0 && !flags.heave && { a: 'go', id: sh.id, where: type }, { a: 'shot', id: sh.id, made }];
       const pre = (tact ? tact + ' ' : '') + act;
       if (made) {
         const before = s.score[oi] - s.score[di];
@@ -554,19 +556,19 @@
         turnBall('live', false, 'Ballon en jeu après interception');
         cheer(di, 12);
         emit('steal', dbTxt + pick(s, [`${th.short} coupe la ligne de passe : interception !`, `${th.short} vole le ballon à ${loser.short} !`, `Ballon dévié puis récupéré par ${th.short} !`]),
-          [{ a: 'steal', id: th.id }], { team: di });
+          [{ a: 'play', prelude: true }, { a: 'steal', id: th.id }], { team: di });
         roar();
       } else if (rnd(s) < 0.25) {
         loser.fouls++;
         turnBall('dead', true, 'Remise en jeu après faute offensive', true);
         cheer(di, 7);
-        emit('to', dbTxt + `Passage en force de ${loser.short} (${loser.fouls}e faute personnelle). Ballon rendu.`, [], { team: di });
+        emit('to', dbTxt + `Passage en force de ${loser.short} (${loser.fouls}e faute personnelle). Ballon rendu.`, [{ a: 'play', prelude: true }], { team: di });
         roar();
         if (loser.fouls >= 6) foulOut(loser, oi);
       } else {
         turnBall('dead', true, 'Remise en jeu après perte de balle', true);
         cheer(oi, activeDbl ? -3 : -6); // balle perdue sans pression : la salle gronde
-        emit('to', dbTxt + pick(s, [`Mauvaise passe de ${loser.short}, le ballon file en touche.`, `${loser.short} marche. Ballon rendu.`, `${loser.short} perd le contrôle, sortie de balle.`]), [], { team: di });
+        emit('to', dbTxt + pick(s, [`Mauvaise passe de ${loser.short}, le ballon file en touche.`, `${loser.short} marche. Ballon rendu.`, `${loser.short} perd le contrôle, sortie de balle.`]), [{ a: 'play', prelude: true }], { team: di });
         roar();
       }
       return finish();
@@ -691,7 +693,7 @@
     else if (oo.play === 'shooter' && c.role === 'H') tact = `${focus.short} ne se libère pas, ${H.short} doit improviser.`;
 
     if (pressTxt) tact = (pressTxt + ' ' + tact).trim();
-    shot(c.who, c.type, c.o, c.d, c.ast && c.ast !== c.who ? c.ast : null, 0, tact);
+    shot(c.who, c.type, c.o, c.d, c.ast && c.ast !== c.who ? c.ast : null, 0, tact, { role: c.role });
     return finish();
   };
 
