@@ -386,6 +386,13 @@
     if (G.holder === id) ballTo([xy[0] + 11, xy[1] + 11]);
   }
   function ballTo(xy) { $('#ball').style.transform = `translate(${xy[0]}px,${xy[1]}px)`; }
+  /** Ballon perdu en touche : il file vers la ligne de côté la plus proche. */
+  function ballOut() {
+    const xy = (G.holder && G.pos[G.holder]) || [250, 300];
+    G.holder = null;
+    document.querySelectorAll('.tok.has').forEach((x) => x.classList.remove('has'));
+    ballTo([xy[0] < 250 ? 4 : 496, Math.min(390, xy[1] + 20)]);
+  }
   function hold(id) {
     G.holder = id;
     document.querySelectorAll('.tok.has').forEach((x) => x.classList.remove('has'));
@@ -466,8 +473,54 @@
   $('#court').addEventListener('click', (e) => { const t = e.target.closest('.tok'); if (t) openSheet(t.dataset.id); });
   $('#fastBtn').addEventListener('click', () => { G.fast = true; });
 
+  /* ---------- placements des phases arrêtées et des rebonds ---------- */
+  /** Joueurs affichés sur le terrain pour l'équipe t (l'état du moteur est déjà celui de fin de séquence). */
+  const shown = (t) => Array.from(document.querySelectorAll('.tok')).map((el) => el.dataset.id)
+    .filter((id) => E.teamOf(G.s, id) === t).map((id) => E.getP(G.s, id));
+  const rebO = (p) => p.oreb * 2 + p.h / 20, rebD = (p) => p.dreb * 2 + p.h / 20;
+  // emplacements le long de la raquette : les plus proches du panier à la défense, puis l'attaque, puis la défense
+  const LANE_D = [[153, 80], [347, 80], [153, 152]], LANE_O = [[153, 116], [347, 116]];
+  const FT_OUT_O = [[104, 304], [396, 304], [250, 372]], FT_OUT_D = [[196, 326], [304, 326], [250, 372]];
+  /** Lancers francs : le tireur sur la ligne, deux attaquants et trois défenseurs le long de la raquette, les autres derrière l'arc. */
+  function ftLayout(shooterId) {
+    const t = E.teamOf(G.s, shooterId), pos = { [shooterId]: SP.ft };
+    shown(t).filter((p) => p.id !== shooterId).sort((a, b) => rebO(b) - rebO(a))
+      .forEach((p, i) => (pos[p.id] = i < 2 ? LANE_O[i] : FT_OUT_O[i - 2]));
+    shown(1 - t).sort((a, b) => rebD(b) - rebD(a))
+      .forEach((p, i) => (pos[p.id] = i < 3 ? LANE_D[i] : FT_OUT_D[i - 3]));
+    return pos;
+  }
+  /** Rebond : les meilleurs rebondeurs se jettent sous le cercle, les défenseurs devant, les attaquants dans leur dos. */
+  function crashLayout(rebId, ballXY) {
+    const off = G.off == null ? E.teamOf(G.s, rebId) : G.off, pos = {};
+    const spotsD = [[206, 98], [294, 98], [250, 132]], spotsO = [[192, 134], [308, 134]];
+    const pickBest = (t, f, n) => shown(t).filter((p) => p.id !== rebId).sort((a, b) => f(b) - f(a)).slice(0, n);
+    pickBest(1 - off, rebD, 3).forEach((p, i) => (pos[p.id] = spotsD[i]));
+    pickBest(off, rebO, 2).forEach((p, i) => (pos[p.id] = spotsO[i]));
+    pos[rebId] = ballXY;
+    // personne ne se superpose au rebondeur
+    Object.keys(pos).forEach((id) => {
+      if (id === rebId) return;
+      const a = pos[id], dx = a[0] - ballXY[0], dy = a[1] - ballXY[1], d = Math.hypot(dx, dy);
+      if (d < 30) pos[id] = d < 1 ? [a[0] + 30, a[1]] : [ballXY[0] + dx / d * 32, ballXY[1] + dy / d * 32];
+    });
+    return pos;
+  }
+  /** Défenseur le plus proche du point visé, hormis celui du porteur : il vient aider. */
+  function helper(id, to) {
+    const own = G.mu[id], off = E.teamOf(G.s, id);
+    let best = null, bd = Infinity;
+    shown(1 - off).forEach((p) => {
+      if (p.id === own || !G.pos[p.id]) return;
+      const d = Math.hypot(G.pos[p.id][0] - to[0], G.pos[p.id][1] - to[1]);
+      if (d < bd) { bd = d; best = p.id; }
+    });
+    return best;
+  }
+
   async function animStep(st) {
     const near = (xy) => [xy[0] + (HOOP[0] - xy[0]) * 0.22, xy[1] + (HOOP[1] - xy[1]) * 0.22];
+    if (st.a !== 'ft') G.ftFor = null;
     if (st.a === 'setup') {
       G.off = E.teamOf(G.s, st.roles.H);
       syncTokens(G.off);
@@ -486,6 +539,8 @@
         place(st.id, to);
         const d = G.mu[st.id];
         if (d) place(d, [to[0] + (left ? 14 : -14), to[1] - 22]);
+        // pénétration jusqu'au cercle : un défenseur voisin vient fermer la route
+        if (st.where === 'rim') { const h = helper(st.id, to); if (h) place(h, [to[0] + (left ? 34 : -34), to[1] + 8]); }
         await sleep(520);
       }
     } else if (st.a === 'shot') {
@@ -496,14 +551,17 @@
       if (st.made) { const h = $('#hoop'); h.classList.remove('swish'); void h.getBoundingClientRect(); h.classList.add('swish'); }
       else { ballTo([HOOP[0] + (Math.random() < 0.5 ? -34 : 34), 96]); await sleep(260); }
     } else if (st.a === 'reb') {
-      const cur = G.pos[st.id];
-      if (cur) place(st.id, [clampX(cur[0] * 0.3 + 250 * 0.7), 104]);
+      const cur = G.pos[st.id] || [250, 140];
+      applyLayout(crashLayout(st.id, [clampX(cur[0] * 0.3 + 250 * 0.7), 104]), false);
       hold(st.id);
-      await sleep(430);
+      await sleep(520);
     } else if (st.a === 'steal') { hold(st.id); await sleep(430); }
     else if (st.a === 'ft') {
-      place(st.id, SP.ft); hold(st.id);
-      await sleep(380);
+      // premier lancer : tout le monde prend sa place ; les suivants partent de là
+      const first = G.ftFor !== st.id;
+      if (first) { applyLayout(ftLayout(st.id), false); G.ftFor = st.id; }
+      hold(st.id);
+      await sleep(first ? 700 : 380);
       G.holder = null; ballTo(HOOP);
       await sleep(480);
       if (st.made) { const h = $('#hoop'); h.classList.remove('swish'); void h.getBoundingClientRect(); h.classList.add('swish'); }
@@ -540,6 +598,7 @@
       } else {
         feed(e);
         pop(e.kind, e.text, e.team);
+        if (e.kind === 'to' && /touche|sortie de balle/.test(e.text)) ballOut();
         for (const st of e.anim) await animStep(st);
         renderBoard(e.snap);
         await sleep(readMs(e.text) * (e.kind === 'setup' ? 0.6 : 1));
