@@ -67,11 +67,15 @@
       habits: [0, 1].map(() => ({ nOff: 0, nDef: 0, play: {}, target: {}, scheme: {} })),
       teams: [],
     };
+    s.seed0 = s.seed;
+    // les tirages au sort (équipes, scénario, lieu) ont leur propre série : un défi se reproduit à l'identique
+    // à partir de ses choix résolus et de sa graine, qu'ils aient été choisis ou tirés (voir le partage)
+    const ch = { seed: (s.seed ^ 0x5bd1e995) | 0 };
     // équipe tirée au sort : jamais l'adversaire que le joueur a choisi
     const pool = MT.TEAMS.filter((x) => x.key !== opts.opp);
-    const mine = S.team(opts.team) || pool[ri(s, 0, pool.length - 1)];
+    const mine = S.team(opts.team) || pool[ri(ch, 0, pool.length - 1)];
     let other = S.team(opts.opp);
-    if (!other || other === mine) { const rest = MT.TEAMS.filter((t) => t !== mine); other = rest[ri(s, 0, rest.length - 1)]; }
+    if (!other || other === mine) { const rest = MT.TEAMS.filter((t) => t !== mine); other = rest[ri(ch, 0, rest.length - 1)]; }
     [mine, other].forEach((t, ti) => {
       const players = t.players.map((p, i) => {
         const q = Object.assign({}, p, { id: t.key + p.num });
@@ -99,7 +103,8 @@
     const base = ri(s, 97, 112);
     const five = U.players.slice(0, 5);
     const star = maxBy(five, E.scorer);
-    const fam = S.FAMILIES.some((f) => f.key === opts.fam) ? opts.fam : S.FAMILIES[ri(s, 0, S.FAMILIES.length - 1)].key;
+    const fam = S.FAMILIES.some((f) => f.key === opts.fam) ? opts.fam : S.FAMILIES[ri(ch, 0, S.FAMILIES.length - 1)].key;
+    const ref = {}; // joueurs visés par les objectifs du scénario
     let desc, diff, ball;
     if (fam === 'lead') {
       diff = ri(s, 3, 5); ball = 1;
@@ -107,11 +112,13 @@
     } else if (fam === 'comeback') {
       diff = -ri(s, 3, 4); ball = 0;
       star.fatigue = ri(s, 84, 92);
+      ref.star = star.id;
       desc = `${-diff} points de retard, ballon pour vous… et ${star.name} est à bout de souffle.`;
     } else if (fam === 'tie') {
       diff = 0; ball = rnd(s) < 0.5 ? 0 : 1;
       const stopper = maxBy(five, (p) => p.dext + p.dint + p.stl * 0.5);
       stopper.fouls = 5;
+      ref.stopper = stopper.id;
       desc = `Égalité parfaite. ${stopper.name}, votre meilleur défenseur, joue avec cinq fautes.`;
     } else if (fam === 'nonet') {
       diff = -ri(s, 1, 2); ball = 1;
@@ -130,9 +137,12 @@
     s.teams.forEach((T, i) => boxScore(s, T, s.score[i]));
     if (rnd(s) < 0.7) { s.ball = 'dead'; s.subsOk = true; s.sit = 'Remise en jeu ligne de touche'; }
     else { s.ball = 'live'; s.subsOk = false; s.shot = ri(s, 16, 24); s.sit = 'Ballon en jeu'; }
-    s.challenge = { fam, title: S.FAMILIES.find((f) => f.key === fam).title, desc };
+    s.challenge = Object.assign({ fam, title: S.FAMILIES.find((f) => f.key === fam).title, desc }, ref);
+    s.score0 = s.score.slice();
     // lieu du match et ambiance de départ : une salle plutôt acquise, d'autant plus que les siens mènent
-    s.home = opts.venue === 'home' ? 0 : opts.venue === 'away' ? 1 : rnd(s) < 0.5 ? 0 : 1;
+    s.home = opts.venue === 'home' ? 0 : opts.venue === 'away' ? 1 : rnd(ch) < 0.5 ? 0 : 1;
+    // choix résolus : de quoi reproduire ce défi (partage) et le ranger au palmarès
+    s.opts = { team: mine.key, opp: other.key, fam, venue: s.home === 0 ? 'home' : 'away' };
     const hm = s.score[s.home] - s.score[1 - s.home];
     s.crowd = Math.round(E.clamp(35 + 4 * E.clamp(hm, -5, 5) + (rnd(s) - 0.5) * 20, -40, 60));
     E.crowdSync(s);

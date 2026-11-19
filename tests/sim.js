@@ -1,6 +1,6 @@
 /* Simulations de contrôle : ouvrir tests/sim.html dans le navigateur (ou : node tests/sim.js).
    Les deux bancs sont confiés au coach simulé pour vérifier la cohérence et l'équilibre du moteur. */
-if (typeof require !== 'undefined') ['data', 'teams', 'engine', 'ai', 'scenarios', 'events'].forEach((f) => require('../js/' + f + '.js'));
+if (typeof require !== 'undefined') ['data', 'teams', 'engine', 'ai', 'scenarios', 'events', 'progress'].forEach((f) => require('../js/' + f + '.js'));
 const MT = globalThis.MT, E = MT.engine;
 const out = [];
 let failed = false;
@@ -188,6 +188,41 @@ assert(a.pct > c.pct + 0.03 && c.pct > b.pct, 'un tireur libéré doit mieux ré
   assert(s.crowd === 28 && /élan de la salle/.test(e.text), 'un temps mort des visiteurs calme la salle');
   s.crowd = -70; E.crowdSync(s);
   assert(E.lineup(s, 0).every((x) => !x.lift) && Math.abs(E.hostile(s, 0) - 0.525) < 1e-9, 'salle qui siffle : l’équipe qui reçoit est gênée, un peu moins');
+}
+/* Partage : un défi se reproduit à l'identique à partir de son code, qu'il ait été choisi ou tiré au sort. */
+{
+  const strip = (s) => JSON.stringify(Object.assign({}, s, { seed: 0 }));
+  let same = 0, n = 60;
+  for (let i = 0; i < n; i++) {
+    const a = MT.scenarios.generate(i % 2 ? { seed: 3000 + i } : { team: 'SEA', venue: 'away', seed: 3000 + i });
+    const o = MT.progress.parse(MT.progress.code(a));
+    const b = MT.scenarios.generate({ team: o.team, opp: o.opp, fam: o.fam, venue: o.venue, seed: o.seed });
+    if (o.version === MT.VERSION && strip(a) === strip(b)) same++;
+  }
+  say(`partage : ${same}/${n} défis reproduits à l’identique depuis leur code`);
+  assert(same === n, 'un code de partage reproduit exactement le défi');
+  assert(MT.progress.parse('SEA-SEA-dom-lead-1a-1.0') === null && MT.progress.parse('n’importe quoi') === null, 'code de partage invalide refusé');
+}
+/* Progression : étoiles, palmarès et trophées sur une série de matchs (sans mémoire du navigateur ici). */
+{
+  // attention : dans le navigateur, ces contrôles effacent la progression gardée sur localhost (jamais celle du site en ligne)
+  const P = MT.progress, starsBy = {};
+  P.reset();
+  for (let g = 0; g < 400; g++) {
+    const s = MT.scenarios.generate({ team: MT.TEAMS[g % K].key, seed: 7000 + g });
+    for (let guard = 0; !s.over && guard < 200; guard++) { for (let t = 0; t < 2; t++) { MT.ai.intervene(s, t); MT.ai.orders(s, t); } E.recordHabits(s); E.playSegment(s); }
+    const r = P.record(s);
+    assert(r.n === (s.winner === s.user ? 1 + r.stars.slice(1).filter(Boolean).length : 0), 'étoiles cohérentes avec le résultat');
+    assert(P.record(s) === r, 'un match ne compte qu’une fois');
+    starsBy[s.challenge.fam] = starsBy[s.challenge.fam] || [0, 0, 0, 0];
+    starsBy[s.challenge.fam][r.n]++;
+  }
+  const d = P.data();
+  say(`progression : ${d.played} matchs, ${d.wins} victoires, ${P.totalStars()} étoiles, ${Object.keys(d.trophies).length}/${P.TROPHIES.length} trophées — ${Object.keys(d.trophies).join(', ')}`);
+  say('étoiles obtenues par scénario (0 / 1 / 2 / 3) :', starsBy);
+  assert(d.played === 400 && P.totalStars() <= P.maxStars(), 'palmarès tenu');
+  P.reset();
+  assert(P.data().played === 0, 'effacement de la progression');
 }
 say(failed ? 'Des contrôles ont échoué.' : 'Tous les contrôles passent.');
 globalThis.SIM_OUT = out;

@@ -116,6 +116,7 @@
     const g0 = s.crowd || 0, d = t === s.home ? v : -v;
     const far = g0 === 0 || Math.sign(d) === Math.sign(g0);
     s.crowd = clamp(Math.round(g0 + (far ? d * clamp(1 - (Math.abs(g0) - 40) / 70, 0.15, 1) : d)), -100, 100);
+    s.crowdHi = Math.max(s.crowdHi == null ? g0 : s.crowdHi, s.crowd); s.crowdLo = Math.min(s.crowdLo == null ? g0 : s.crowdLo, s.crowd);
     E.crowdSync(s);
     const a = lvl(g0), b = lvl(s.crowd), H = s.teams[s.home], c = E.city(H);
     if (b > a && b > 0) return { team: s.home, text: b === 2 ? `La salle explose ! Le public de ${c} pousse derrière les siens.` : `Le public de ${c} se lève et donne de la voix.` };
@@ -136,6 +137,7 @@
   E.callTimeout = function (s, t) {
     const T = s.teams[t];
     T.timeouts--;
+    s.toUsed = s.toUsed || [0, 0]; s.toUsed[t]++;
     s.ball = 'dead'; s.subsOk = true; s.sit = 'Reprise après temps mort'; s.ato = t;
     if (s.poss === t) s.bc = false; // temps mort de l'attaque : remise en jeu en zone avant
     for (const tm of s.teams)
@@ -213,7 +215,8 @@
     const oi = s.poss, di = 1 - oi;
     const O = s.teams[oi], D = s.teams[di];
     const oo = Object.assign({}, O.orders), dd = Object.assign({}, D.orders);
-    const seg = { n: ++s.segN, period: s.period, clock0: s.clock, score0: s.score.slice(), poss: oi, oo, dd, texts: [], to: false, oreb: false };
+    const seg = { n: ++s.segN, period: s.period, clock0: s.clock, score0: s.score.slice(), poss: oi, oo, dd, texts: [], to: false, oreb: false,
+      on: s.teams.map((T) => T.onCourt.slice()), scorer: null };
     const off = E.lineup(s, oi), def = E.lineup(s, di);
     const R = roles(off, oo.play, oo.target);
     const mu = matchups(off, def);
@@ -281,7 +284,7 @@
       for (let i = 0; i < n; i++) {
         lastMade = rnd(s) < 0.4 + 0.055 * eff(victim, 'ft') - 0.1 * E.hostile(s, oi);
         victim.st.fta++;
-        if (lastMade) { s.score[oi]++; victim.st.ftm++; victim.st.pts++; nMade++; }
+        if (lastMade) { s.score[oi]++; victim.st.ftm++; victim.st.pts++; nMade++; seg.scorer = victim.id; }
         const final = i === n - 1;
         if (final && lastMade) turnBall('dead', true, 'Remise en jeu après lancers francs', true);
         if (!lastMade && s.clock <= 60) cheer(oi, -5, true); // lancer manqué dans la dernière minute
@@ -368,6 +371,7 @@
       if (made) {
         const before = s.score[oi] - s.score[di];
         s.score[oi] += pts;
+        seg.scorer = sh.id;
         if (!fouled) turnBall('dead', false, 'Remise en jeu après panier', true);
         const dunk = type === 'rim' && o > 0.6 && eff(sh, 'dunk') >= 6;
         // grille du spectacle (voir README) : du dunk avec la faute au simple panier à deux points

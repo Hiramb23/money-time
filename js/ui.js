@@ -1,7 +1,7 @@
 /* Money Time — interface : lancement, match, résultat. */
 (function () {
   'use strict';
-  const E = MT.engine, L = MT.L, eff = E.eff;
+  const E = MT.engine, L = MT.L, eff = E.eff, PR = MT.progress;
   const $ = (q) => document.querySelector(q);
   const G = { s: null, start: null, user: 0, home: { team: 'SEA', opp: '', fam: '', venue: '' }, sel: null, busy: false, fast: false, pos: {}, mu: {}, holder: null };
 
@@ -31,6 +31,9 @@
   };
   const fatTip = (p) => { const f = Math.round(p.fatigue), r = Math.round(E.felt(p)); return r < f ? `Fatigue ${f} %, ressentie ${r} % grâce au public` : `Fatigue ${f} %`; };
   const VENUES = { home: 'À domicile', away: 'À l’extérieur' };
+  /** Étoiles sous forme de texte : ★★☆ */
+  const starTxt = (n) => '★'.repeat(n) + '☆'.repeat(3 - n);
+  const esc = (x) => String(x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const sleep = (ms) => new Promise((r) => setTimeout(r, G.fast ? ms * 0.12 : ms));
   const show = (id) => ['home', 'match', 'result'].forEach((k) => ($('#' + k).hidden = k !== id));
   let toastT;
@@ -62,7 +65,7 @@
   function renderHome() {
     const h = G.home, T = S.team(h.team), O = S.team(h.opp), F = S.FAMILIES.find((f) => f.key === h.fam);
     const tile = (t) => `<button type="button" class="ttile ${t.key === h.team ? 'on' : ''}" data-team="${t.key}" style="--c:${t.color};--ink:${S.ink(t.color)}">
-        <span class="badge">${t.abbr}</span><span class="tn"><b>${cityOf(t)}</b><small>${nickOf(t)}</small></span><em>${t.style}</em></button>`;
+        <span class="badge">${t.abbr}</span><span class="tn"><b>${cityOf(t)}</b><small>${nickOf(t)}</small></span><em>${t.style}</em>${PR.teamStars(t.key) ? `<i class="tstars" title="Étoiles obtenues avec cette équipe">★ ${PR.teamStars(t.key)}/15</i>` : ''}</button>`;
     const row = (p) => `<li><button type="button" data-prof="${p.num}" title="Voir la fiche de ${p.name}"><i>${p.num}</i><span>${p.name}</span><em>${p.pos}</em><em>${p.age} ans</em><em title="${(MT.COUNTRIES[p.nat] || [''])[0]}">${flag(p)}</em></button></li>`;
     $('#home').innerHTML = `<div class="homepage">
       <header class="hhead">
@@ -70,7 +73,9 @@
         <h1 class="vh">Money Time</h1>
         <p class="sub">Deux minutes à jouer. À vous de gagner.</p>
         <p class="intro">Prenez place sur le banc d’une équipe à deux minutes de la fin du match. Systèmes, défense, remplacements, temps morts : chaque décision compte, et le chrono ne tourne pas pendant que vous réfléchissez.</p>
+        <button type="button" class="palbtn" data-act="palmares">Palmarès et trophées <span>★ ${PR.totalStars()}/${PR.maxStars()} · ${Object.keys(PR.data().trophies).length}/${PR.TROPHIES.length} trophées</span></button>
       </header>
+      ${sharedBanner()}
       <div class="homewrap">
       <div class="hmain">
         <section><h3><b>1</b>Votre équipe</h3><div class="ochips trand"><button type="button" class="ochip rand ${T ? '' : 'on'}" data-team=""><i>?</i>Au hasard</button></div><div class="tgrid">${MT.TEAMS.map(tile).join('')}</div></section>
@@ -84,7 +89,9 @@
         </div><p class="vnote">À domicile, le public pousse derrière vous ; à l’extérieur, il gêne vos lancers francs et votre maîtrise du ballon.</p></section>
         <section><h3><b>4</b>Le scénario</h3><div class="sgrid">
           <button type="button" class="scard rand ${h.fam ? '' : 'on'}" data-fam=""><b>Au hasard</b><small>Le jeu tire une situation pour vous.</small></button>
-          ${S.FAMILIES.map((f) => `<button type="button" class="scard ${f.key === h.fam ? 'on' : ''}" data-fam="${f.key}"><b>${f.title}</b><small>${f.pitch}</small></button>`).join('')}
+          ${S.FAMILIES.map((f) => { const g = PR.goals(f.key), b = T ? PR.best(T.key, f.key) : 0;
+            return `<button type="button" class="scard ${f.key === h.fam ? 'on' : ''}" data-fam="${f.key}"><b>${f.title}</b><small>${f.pitch}</small>
+            <span class="sgoals"><span>★★ ${g[1]}</span><span>★★★ ${g[2]}</span></span>${T ? `<span class="sbest ${b ? '' : 'none'}" title="Votre meilleur résultat avec ${T.name}">${starTxt(b)}</span>` : ''}</button>`; }).join('')}
         </div></section>
       </div>
       <aside class="hside" style="--c:${T ? T.color : '#F2B544'};--ink:${T ? S.ink(T.color) : '#0B1422'}">
@@ -116,10 +123,35 @@
     else if (fam != null) { h.fam = fam; renderHome(); }
     else if (venue != null) { h.venue = venue; renderHome(); }
     else if (e.target.closest('#launch')) newChallenge();
+    else if (e.target.closest('[data-act=palmares]')) openPalmares();
+    else if (e.target.closest('[data-act=playShared]')) newChallenge(G.shared);
+    else if (e.target.closest('[data-act=dropShared]')) { G.shared = null; clearHash(); renderHome(); }
   });
 
-  function newChallenge() {
-    G.s = S.generate({ team: G.home.team, opp: G.home.opp, fam: G.home.fam, venue: G.home.venue });
+  /* ---------- défi partagé : #defi=CODE dans l'adresse ---------- */
+  function readHash() {
+    const m = location.hash.match(/defi=([^&]+)/);
+    if (!m) return false;
+    const o = PR.parse(decodeURIComponent(m[1]));
+    G.shared = o ? Object.assign(o, { bad: false }) : { bad: true };
+    return true;
+  }
+  function clearHash() { if (location.hash) history.replaceState(null, '', location.pathname + location.search); }
+  function sharedBanner() {
+    const o = G.shared;
+    if (!o) return '';
+    if (o.bad) return `<div class="shared bad"><p><b>Lien de défi illisible.</b> Il a peut-être été coupé en le copiant. Demandez à votre ami de vous le renvoyer.</p><button type="button" data-act="dropShared">Fermer</button></div>`;
+    const T = S.team(o.team), O = S.team(o.opp), F = S.FAMILIES.find((f) => f.key === o.fam);
+    return `<div class="shared"><p><span class="evtag">Défi partagé</span><b>${T.name}</b> contre <b>${O.name}</b>, ${VENUES[o.venue].toLowerCase()} · ${F.title}
+      <small>Vous partez exactement de la même situation que votre ami ; la suite dépend de vos décisions.${o.version !== MT.VERSION ? ` Ce défi a été créé avec la version ${esc(o.version)} du jeu : la situation peut légèrement différer.` : ''}</small></p>
+      <span class="sacts"><button type="button" class="primary" data-act="playShared">Relever le défi</button><button type="button" data-act="dropShared">Ignorer</button></span></div>`;
+  }
+  window.addEventListener('hashchange', () => { if (readHash() && !$('#home').hidden) renderHome(); else if (G.shared && $('#home').hidden) { show('home'); renderHome(); } });
+
+  function newChallenge(shared) {
+    G.s = S.generate(shared ? { team: shared.team, opp: shared.opp, fam: shared.fam, venue: shared.venue, seed: shared.seed }
+      : { team: G.home.team, opp: G.home.opp, fam: G.home.fam, venue: G.home.venue });
+    if (shared) { G.shared = null; clearHash(); }
     G.start = E.clone(G.s);
     enterMatch();
   }
@@ -136,6 +168,8 @@
     $('#tokens').innerHTML = '';
     show('match');
     feed({ kind: 'intro', text: `Défi — ${s.challenge.title}. ${s.challenge.desc}` });
+    const g = PR.goals(s.challenge.fam);
+    feed({ kind: 'intro', text: `Objectifs — ★ ${g[0]} · ★★ ${g[1]} · ★★★ ${g[2]}.` });
     const host = s.teams[s.home];
     feed({ kind: 'crowd', team: s.home, text: s.home === s.user
       ? `Match à domicile : le public de ${E.city(host)} est derrière vous. ${E.crowdLevel(s.crowd)}.`
@@ -231,7 +265,7 @@
     if (!opp.some((p) => p.id === o.dblTarget)) o.dblTarget = E.maxBy(opp, E.scorer).id;
     const shot = Math.ceil(Math.min(s.shot, s.clock));
     let h = `<div class="sit ${att ? 'att' : 'def'}">
-      <div class="chal">Défi · ${s.challenge.title}</div>
+      <div class="chal">Défi · ${s.challenge.title} <span class="goalsline" title="★ ${PR.goals(s.challenge.fam).join(' · ★ ')}">· ★★ ${PR.goals(s.challenge.fam)[1].toLowerCase()} · ★★★ ${PR.goals(s.challenge.fam)[2].toLowerCase()}</span></div>
       <h2>${att ? 'Vous attaquez' : 'Vous défendez'}</h2>
       <p>${s.sit} · ${s.ball === 'dead' ? 'arrêt de jeu' : 'ballon en jeu'} · ${shot} s pour tirer</p>
     </div>`;
@@ -817,6 +851,8 @@
     hidePop();
     const s = G.s, u = s.user, won = s.winner === u;
     const ms = E.moments(s);
+    const rec = PR.record(s), goals = PR.goals(s.challenge.fam);
+    const tro = rec.trophies.map((k) => PR.TROPHIES.find((x) => x.k === k));
     $('#result').innerHTML = `<div class="res ${won ? 'won' : 'lost'}">
       <img class="logo" src="assets/logo.png" alt="Money Time">
       <p class="chal">Défi · ${s.challenge.title}${s.period > 4 ? ' · après prolongation' : ''}</p>
@@ -825,6 +861,10 @@
         <span style="--c:${s.teams[0].color}"><i></i>${s.teams[0].name}</span><b>${s.score[0]}</b><em>–</em><b>${s.score[1]}</b>
         <span style="--c:${s.teams[1].color}">${s.teams[1].name}<i></i></span>
       </div>
+      <div class="rstars"><p class="big" aria-label="${rec.n} étoile${rec.n > 1 ? 's' : ''} sur 3">${starTxt(rec.n)}</p>
+        <ul>${goals.map((g, i) => `<li class="${rec.stars[i] ? 'ok' : ''}">${rec.stars[i] ? '✓' : '✗'} ${'★'.repeat(i + 1)} ${g}</li>`).join('')}</ul>
+        <p class="rbest">${rec.record ? `Nouveau record pour ${s.teams[u].name} dans « ${s.challenge.title} » !` : rec.prev ? `Votre record pour ce défi : ${starTxt(rec.prev)}` : ''}</p></div>
+      ${tro.length ? `<div class="rtro"><h3>Trophée${tro.length > 1 ? 's' : ''} obtenu${tro.length > 1 ? 's' : ''}</h3>${tro.map((x) => `<p><b>🏆 ${x.name}</b> — ${x.desc}</p>`).join('')}</div>` : ''}
       <h3>Trois moments décisifs</h3>
       <ol class="moments">${ms.map((m) => `<li class="${m.delta > 0 ? 'up' : m.delta < 0 ? 'down' : ''}">
         <div class="when"><b>${m.period > 4 ? 'Prol. ' : ''}${fmtClock(m.clock)}</b><span>${s.teams[0].abbr} ${m.score[0]} – ${m.score[1]} ${s.teams[1].abbr}</span></div>
@@ -832,7 +872,9 @@
       <div class="acts">
         <button type="button" class="primary" data-act="replay">Rejouer cette situation</button>
         <button type="button" data-act="new">Nouveau défi</button>
+        <button type="button" data-act="share">Partager ce défi</button>
         <button type="button" data-act="stats">Statistiques du match</button>
+        <button type="button" data-act="palmares">Palmarès</button>
         <button type="button" data-act="home">Retour à l’accueil</button>
       </div></div>`;
     show('result');
@@ -841,11 +883,80 @@
     const b = e.target.closest('[data-act]');
     if (!b) return;
     if (b.dataset.act === 'stats') openStats();
+    else if (b.dataset.act === 'share') openShare();
+    else if (b.dataset.act === 'palmares') openPalmares();
     else if (b.dataset.act === 'replay') replay();
     else if (b.dataset.act === 'new') newChallenge();
     else { renderHome(); show('home'); }
   });
 
+  /* ---------- palmarès et vitrine des trophées ---------- */
+  function openPalmares() {
+    const d = PR.data(), fams = S.FAMILIES, got = d.trophies;
+    const pct = (a) => (a[0] ? Math.round(a[1] / a[0] * 100) + ' %' : '—');
+    const groups = [...new Set(PR.TROPHIES.map((t) => t.g))];
+    $('#modal').innerHTML = `<div class="sheet palsheet">
+      <button type="button" class="close" aria-label="Fermer">×</button>
+      <h2>Palmarès</h2>
+      <p class="when">★ ${PR.totalStars()} étoiles sur ${PR.maxStars()} · ${Object.keys(got).length} trophées sur ${PR.TROPHIES.length}</p>
+      ${PR.kept() ? '' : '<p class="note warn">Votre navigateur ne permet pas de garder la progression (navigation privée ou réglage) : elle sera perdue en quittant la page.</p>'}
+      <div class="tscroll"><table class="pal"><thead><tr><th>Équipe</th>${fams.map((f) => `<th title="${f.pitch}">${f.title}</th>`).join('')}<th>Total</th></tr></thead>
+        <tbody>${MT.TEAMS.map((t) => `<tr><th style="--c:${t.color}"><i></i>${t.name}</th>${fams.map((f) => { const b = PR.best(t.key, f.key);
+          return `<td><button type="button" class="pcell ${b ? 'got' : ''}" data-pal="${t.key}:${f.key}" title="${t.name} · ${f.title} : ${b ? b + ' étoile' + (b > 1 ? 's' : '') : 'à réussir'}. Cliquer pour préparer ce défi.">${starTxt(b)}</button></td>`; }).join('')}
+          <td class="ptot"><span class="track"><span style="width:${PR.teamStars(t.key) / 15 * 100}%"></span></span>${PR.teamStars(t.key)}/15</td></tr>`).join('')}</tbody></table></div>
+      <p class="legend">Une case par équipe et par scénario : votre meilleur résultat, quels que soient l’adversaire et le lieu. Cliquer une case prépare ce défi sur l’accueil.</p>
+      <h3 class="ph">Le coach</h3>
+      <div class="coach"><span><b>${d.played}</b> matchs</span><span><b>${d.wins}</b> victoires (${pct([d.played, d.wins])})</span><span>Meilleure série : <b>${d.bestStreak}</b></span><span>Série en cours : <b>${d.streak}</b></span>
+        <span>À domicile : <b>${d.home[1]}/${d.home[0]}</b></span><span>À l’extérieur : <b>${d.away[1]}/${d.away[0]}</b></span></div>
+      <h3 class="ph">Trophées</h3>
+      ${groups.map((g) => `<h4>${g}</h4><div class="trophies">${PR.TROPHIES.filter((x) => x.g === g).map((x) => got[x.k]
+        ? `<div class="tro got"><b>🏆 ${x.name}</b><small>${x.desc}</small><em>Obtenu le ${got[x.k].split('-').reverse().join('/')}</em></div>`
+        : x.secret ? '<div class="tro"><b>? Trophée secret</b><small>Il se dévoilera le jour où vous l’obtiendrez.</small></div>'
+        : `<div class="tro"><b>${x.name}</b><small>${x.desc}</small></div>`).join('')}</div>`).join('')}
+      <p class="preset"><button type="button" data-act="reset">Effacer ma progression</button>
+        <small>Votre progression est gardée dans ce navigateur, sur cet appareil seulement. Elle n’est envoyée nulle part.</small></p>
+    </div>`;
+    $('#modal').hidden = false;
+  }
+  function openShare() {
+    const s = G.s, u = s.user, rec = s.recorded || PR.record(s);
+    const url = location.origin + location.pathname + '#defi=' + PR.code(s);
+    const text = `Money Time · ${s.teams[u].name} – ${s.teams[1 - u].name} · ${s.challenge.title} · ${s.winner === u ? 'gagné' : 'perdu'} ${s.score[u]}-${s.score[1 - u]} · ${starTxt(rec.n)}\nRelève le défi : ${url}`;
+    $('#modal').innerHTML = `<div class="sheet sharesheet">
+      <button type="button" class="close" aria-label="Fermer">×</button>
+      <h2>Partager ce défi</h2>
+      <p class="when">Envoyez ce message à un ami, par SMS, messagerie ou e-mail. La première ligne donne votre résultat, le lien lui permet de jouer exactement la même situation de départ.</p>
+      <textarea readonly rows="4" aria-label="Message à partager"></textarea>
+      <p class="sacts"><button type="button" class="primary" data-act="copy">Copier le message</button>${navigator.share ? '<button type="button" data-act="send">Envoyer…</button>' : ''}<span class="copied" hidden>Copié !</span></p>
+      <p class="legend">Le lien ne contient que la situation de jeu : ni votre nom, ni vos décisions.</p>
+    </div>`;
+    $('#modal textarea').value = text;
+    $('#modal').hidden = false;
+  }
+  async function copyShare() {
+    const ta = $('#modal textarea');
+    try { await navigator.clipboard.writeText(ta.value); }
+    catch (e) { ta.focus(); ta.select(); try { document.execCommand('copy'); } catch (x) { /* le texte reste sélectionné */ } }
+    const c = $('#modal .copied'); if (c) c.hidden = false;
+  }
+  $('#modal').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-act], [data-pal]');
+    if (!b) return;
+    if (b.dataset.pal) {
+      const [team, fam] = b.dataset.pal.split(':');
+      Object.assign(G.home, { team, fam });
+      if (G.home.opp === team) G.home.opp = '';
+      $('#modal').hidden = true;
+      show('home'); renderHome(); window.scrollTo(0, 0);
+    } else if (b.dataset.act === 'copy') copyShare();
+    else if (b.dataset.act === 'send') navigator.share({ text: $('#modal textarea').value }).catch(() => {});
+    else if (b.dataset.act === 'reset') {
+      if (b.dataset.sure) { PR.reset(); openPalmares(); if (!$('#home').hidden) renderHome(); }
+      else { b.dataset.sure = '1'; b.textContent = 'Confirmer : tout effacer définitivement'; b.classList.add('danger'); }
+    }
+  });
+
+  readHash();
   renderHome();
   MT.G = G;
 })();
